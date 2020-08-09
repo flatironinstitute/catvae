@@ -37,6 +37,9 @@ class AsymptoticCovariance:
         p = closure(x)
         return torch.prod(p)
 
+    def tr_cov(self, x):
+        p = closure(x)
+        return torch.trace(self.Psi.T @ torch.diag(1 / p) self.Psi)
 
 class LinearCatVAE(nn.Module):
 
@@ -113,7 +116,7 @@ class LinearCatVAE(nn.Module):
         denom = x @ (self.Psi @ eta).sum(dim=-1).view(b, n, 1)
         return K(x) + x @ self.Psi @ eta - denom
 
-    def multinomial_kl(self, x, eta):
+    def multinomial_kl(self, x):
         """ KL divergence between asymptotic multinomial and decoding normal"""
         p = closure(x)
         x = ilr(x, self.Psi)
@@ -121,23 +124,38 @@ class LinearCatVAE(nn.Module):
         z_logvar = self.variational_logvars
         W = self.decoder.weight
         V = self.encoder.weight
+        # Terms from decoder
+        # 1st decoder term
         tr_wdw = torch.trace(
             torch.mm(W, torch.mm(torch.diag(torch.exp(z_logvar)), W.t())))
         wv = torch.mm(W, V)
         vtwtwv = wv.t().mm(wv)
         xtvtwtwvx = (x * torch.mm(x, vtwtwv)).mean(0).sum()
+        # 2nd decoder term
         xtwvx = 2.0 * (x * x.mm(wv)).mean(0).sum()
         xtx = (x * x).mean(0).sum()
-
+        # 3rd decoder term
         S = self.Sigma.cov(p)
-        xSx = 2.0 * (x * x.mm(X)).mean(0).sum()
-
+        xSx = 2.0 * (x * x.mm(S)).mean(0).sum()
+        trS = tr_cov(p)
         d = x.shape[-1]
-        log_2pi_s2 = (LOG_2_PI + self.log_sigma_sq) / 2.0
         s2 = torch.exp(self.log_sigma_sq)
-        # TODO: where tf are the extra terms coming from?
-        loss = - (1/s2) * (tr_wdw + xtvtwtwvx - xtwvx + xtx + xSx) - (d / 2) * log_2pi_s2
-        return loss
+
+        E_p_eta_z = - (d / 2) * (LOG_2_PI + self.log_sigma_sq) - (1/s2) * (
+            tr_wdw + xtvtwtwvx
+            - xtwvx + xtx
+            + trS + xSx
+        )
+        # Terms from asymptotic normal
+        Sinv = self.Sigma.inv_cov(p)
+        xSinvx = 2.0 * (x * x.mm(Sinv)).mean(0).sum()
+        detS = self.Sigma.det_cov(p)
+        E_q_eta_z = -(d / 2) * (LOG_2_PI + torch.log(detS)) - (1 / (2 * s2)) * (
+            xSx -  xSinvx + 1
+        )
+
+        kl_qp = E_p_eta_z - E_q_eta_z
+        return kl_qp
 
     def gaussian_kl(self, z_mean, z_logvar):
         """ KL divergence between latent posterior and latent prior (iii)"""
@@ -150,31 +168,15 @@ class LinearCatVAE(nn.Module):
         # No dimension constant as we sum after
         return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
 
-    def analytic_exp_recon_loss(self, x):
-        z_logvar = self.variational_logvars
-        tr_wdw = torch.trace(
-            torch.mm(self.decoder.weight, torch.mm(torch.diag(torch.exp(z_logvar)), self.decoder.weight.t())))
-
-        wv = torch.mm(self.decoder.weight, self.encoder.weight)
-        vtwtwv = wv.t().mm(wv)
-        xtvtwtwvx = (x * torch.mm(x, vtwtwv)).mean(0).sum()
-
-        xtwvx = 2.0 * (x * x.mm(wv)).mean(0).sum()
-
-        xtx = (x * x).mean(0).sum()
-
-        exp_recon_loss = -(tr_wdw + xtvtwtwvx - xtwvx + xtx) / (2.0 * torch.exp(self.log_sigma_sq)) - x.shape[-1] * (
-                LOG_2_PI + self.log_sigma_sq) / 2.0
-        return exp_recon_loss
-
     def analytic_elbo(self, x, z_mean):
         """Computes the analytic ELBO for a linear VAE.
         """
+        eta = ilr(x, self.Psi)
         z_logvar = self.variational_logvars
-        kl_div = (-self.gaussian_kl(z_mean, z_logvar)).mean(0).sum()
-        exp_recon_loss = self.analytic_exp_recon_loss(x)
-
-        return kl_div - exp_recon_loss
+        exp_gauss = (-self.gaussian_kl(z_mean, z_logvar)).mean(0).sum()
+        exp_mult = self.multinomial_kl(x)
+        exp_recon_loss = self.multinomial_loglike(x, eta)
+        return exp_recon_loss + exp_mult + exp_gauss
 
     def forward(self, x):
         z_mean = self.encoder(x)
