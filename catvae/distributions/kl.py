@@ -1,5 +1,5 @@
 """
-Encodes KL divergences
+Encodes KL divergences between normal distributions
 """
 
 @register_kl(MultivariateNormalFactor)
