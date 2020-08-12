@@ -109,7 +109,6 @@ class LightningCountVAE(pl.LightningModule):
             current_lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
         else:
             current_lr = self.hparams.learning_rate
-
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss, 'lr': current_lr,
             'train_reconstruction_loss': rec_loss.mean(),

@@ -32,14 +32,15 @@ class AsymptoticCovariance:
         p = closure(x)
         return self.Psi @ torch.diag(p) self.Psi.T
 
-    def det_cov(self, x):
+    def logdet_cov(self, x):
         """ Obtain determinant of covariance estimate for nonzero counts x."""
         p = closure(x)
-        return torch.prod(p)
+        return torch.sum(torch.log(p))
 
     def tr_cov(self, x):
         p = closure(x)
-        return torch.trace(self.Psi.T @ torch.diag(1 / p) self.Psi)
+        return torch.trace(self.Psi.T @ torch.diag(1 / p) @ self.Psi)
+
 
 class LinearCatVAE(nn.Module):
 
@@ -111,16 +112,20 @@ class LinearCatVAE(nn.Module):
            The input counts of dimension (B, N, D)
         eta : torch.Tensor
 
+        TODO: this needs to be redone
         """
         b, n, d = x.shape
-        denom = x @ (self.Psi @ eta).sum(dim=-1).view(b, n, 1)
-        return K(x) + x @ self.Psi @ eta - denom
+        exp_eta = W @ V @ eta
+        denom = x @ (self.Psi @ exp_eta).sum(dim=-1).view(b, n, 1)
+        return K(x) + x @ self.Psi @ exp_eta - denom
 
     def multinomial_kl(self, x):
-        """ KL divergence between asymptotic multinomial and decoding normal"""
-        p = closure(x)
-        x = ilr(x, self.Psi)
+        """ KL divergence between asymptotic multinomial and decoding normal
 
+        TODO: this needs to be redone
+        """
+        p = closure(x)
+        hx = ilr(x, self.Psi)
         z_logvar = self.variational_logvars
         W = self.decoder.weight
         V = self.encoder.weight
@@ -149,8 +154,8 @@ class LinearCatVAE(nn.Module):
         # Terms from asymptotic normal
         Sinv = self.Sigma.inv_cov(p)
         xSinvx = 2.0 * (x * x.mm(Sinv)).mean(0).sum()
-        detS = self.Sigma.det_cov(p)
-        E_q_eta_z = -(d / 2) * (LOG_2_PI + torch.log(detS)) - (1 / (2 * s2)) * (
+        logdetS = self.Sigma.logdet_cov(p)
+        E_q_eta_z = -(d / 2) * (LOG_2_PI + logdetS) - (1 / (2 * s2)) * (
             xSx -  xSinvx + 1
         )
 
