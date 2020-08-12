@@ -2,7 +2,8 @@ import math
 
 import torch
 from catvae.distributions import constraints
-from torch.distributions.distribution import Distribution, MultivariateNormal
+from torch.distributions.distribution import Distribution
+from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.distributions.utils import _standard_normal, lazy_property
 
 
@@ -44,7 +45,7 @@ class MultivariateNormalFactor(MultivariateNormal):
         # TODO: not sure what this should be
         pass
 
-    def rsample(self, sample_shape=):
+    def rsample(self, sample_shape):
         """ Eigenvalue decomposition can also be used for sampling
         https://stats.stackexchange.com/a/179275/79569
         """

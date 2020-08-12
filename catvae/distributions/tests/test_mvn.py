@@ -1,22 +1,22 @@
 import unittest
-from catvae.distributions.multivariate_normal import MultivariateNormalFactor
-from catvae.distributions.multivariate_normal import MultivariateNormalFactorSum
+from catvae.distributions.mvn import MultivariateNormalFactor
+from catvae.distributions.mvn import MultivariateNormalFactorSum
 import torch
 import torch.testing as tt
 from gneiss.balances import _balance_basis
 from gneiss.cluster import random_linkage
 
 
-
 class TestMultivariateNormalFactor(unittest.TestCase):
     def setUp(self):
         n = 10
         torch.manual_seed(0)
-        self.U1 = torch.random.randn((n, n))
-        self.D1 = torch.random.random(n)
+        self.U1 = torch.randn((n, n))
+        self.D1 = torch.rand(n)
         self.n = n
 
         psi = _balance_basis(random_linkage(self.n))[0]
+        print(psi)
         self.psi = torch.Tensor(psi)
 
     def test_precision_matrix(self):

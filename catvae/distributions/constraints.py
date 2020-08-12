@@ -46,6 +46,6 @@ class _LeftOrthonormal(Constraint):
 
 
 # Public interface
-orthonormal = _Orthonomal()
-right_orthonormal = _RightOrthonomal()
-left_orthonormal = _LeftOrthonomal()
+orthonormal = _Orthonormal()
+right_orthonormal = _RightOrthonormal()
+left_orthonormal = _LeftOrthonormal()
