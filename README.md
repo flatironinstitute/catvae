@@ -1,1 +1,2 @@
-# iclr-2021-categorical-variational-autoencoders
+# catvae
+Categorical Variational Autoencoders
