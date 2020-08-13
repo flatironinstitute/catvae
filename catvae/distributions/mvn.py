@@ -2,6 +2,7 @@ import math
 
 import torch
 from catvae.distributions import constraints
+import torch.distributions.constraints as torch_constraints
 from torch.distributions.distribution import Distribution
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.distributions.utils import _standard_normal, lazy_property
@@ -20,21 +21,24 @@ class MultivariateNormalFactor(MultivariateNormal):
             Orthonormal factor matrix for decomposing covariance matrix.
         diag : torch.Tensor
             Diagonal matrix of eigenvalues for covariance decomposition
+        n : torch.Tensor
+            Number of samples
         """
-        arg_constraints = {'loc': constraints.real_vector,
+        arg_constraints = {'loc': torch_constraints.real_vector,
                            'U': constraints.left_orthonormal,
-                           'diag': constraints.positive}
+                           'diag': torch_constraints.positive}
         self.loc = loc
         self.U = U
-        self.S = S
+        self.S = diag
+        # self.n = n
 
     @property
     def covariance_matrix(self):
-        return self.U @ torch.diag(self.S) @ self.U.t()
+        return self.U @ torch.diag(1 / self.S) @ self.U.t()
 
     @property
     def precision_matrix(self):
-        return self.U @ torch.diag(1 / self.S) @ self.U.t()
+        return self.U @ torch.diag(self.S) @ self.U.t()
 
     @property
     def mean(self):
@@ -89,11 +93,11 @@ class MultivariateNormalFactorSum(MultivariateNormal):
             Diagonal matrix of eigenvalues for the
             second covariance decomposition
         """
-        arg_constraints = {'loc': constraints.real_vector,
+        arg_constraints = {'loc': torch_constraints.real_vector,
                            'U1': constraints.left_orthonormal,
-                           'diag1': constraints.positive,
-                           'U2': constraints.real_vector,
-                           'diag2': constraints.positive
+                           'diag1': torch_constraints.positive,
+                           'U2': torch_constraints.real_vector,
+                           'diag2': torch_constraints.positive
         }
 
     @property

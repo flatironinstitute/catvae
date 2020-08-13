@@ -5,25 +5,29 @@ import torch
 import torch.testing as tt
 from gneiss.balances import _balance_basis
 from gneiss.cluster import random_linkage
+import math
 
 
 class TestMultivariateNormalFactor(unittest.TestCase):
     def setUp(self):
-        n = 10
+        n = 100
         torch.manual_seed(0)
         self.U1 = torch.randn((n, n))
         self.D1 = torch.rand(n)
+        self.D1 = self.D1 / torch.sum(self.D1)
         self.n = n
 
         psi = _balance_basis(random_linkage(self.n))[0]
-        print(psi)
-        self.psi = torch.Tensor(psi)
+        self.psi = torch.Tensor(psi.copy())
 
     def test_precision_matrix(self):
         # tests how accurately the inverse covariance matrix can be computed
-        dist = MultivariateNormalFactor()
-        exp = torch.inverse(self.psi @ torch.diag(D1) @ self.psi.t())
-        tt.assert_allclose(exp, dist.precision_matrix)
+        loc = torch.zeros(self.n)
+        dist = MultivariateNormalFactor(loc, self.psi, self.D1)
+        exp = torch.inverse(self.psi @ torch.diag(1 / self.D1) @ self.psi.t())
+        tt.assert_allclose(exp, dist.precision_matrix,
+                           rtol=1,
+                           atol=1/(self.n * math.sqrt(self.n)))
 
     def test_rsample(self):
         pass
