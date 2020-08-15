@@ -97,8 +97,7 @@ class MultivariateNormalFactor(Distribution):
 
 class MultivariateNormalFactorSum(Distribution):
 
-    def __init__(self, mu, U1, diag1, U2, diag2
-    ):
+    def __init__(self, mu, U1, diag1, U2, diag2, n, validate_args=None):
         """ Multivariate normal distribution parameterized as the
             sum of two normal distributions whose covariances can be
             represented as an eigenvalue decomposition.
@@ -121,28 +120,42 @@ class MultivariateNormalFactorSum(Distribution):
         diag2 : torch.Tensor
             Diagonal matrix of eigenvalues for the
             second covariance decomposition
+        n : torch.Tensor
+            Number of multinomial observations.
         """
         arg_constraints = {'mu': torch_constraints.real_vector,
                            'U1': constraints.left_orthonormal,
                            'diag1': torch_constraints.positive,
                            'U2': torch_constraints.real_vector,
-                           'diag2': torch_constraints.positive
+                           'diag2': torch_constraints.positive,
+                           'n': torch_constraints.positive
         }
+
+        if mu.dim() < 1:
+            raise ValueError("`mu` must be at least one-dimensional.")
+        d = U1.shape[-1]
+        if mu.shape[-1] != d - 1:
+            raise ValueError(f"The last dimension of `mu` must be {d-1}")
+
         self.mu = mu
         self.U1 = U1
         self.S1 = diag1
         self.U2 = U2
         self.S2 = diag2
+        self.n = n
+        batch_shape, event_shape = self.mu.shape[:-1], self.mu.shape[-1:]
+        super(MultivariateNormalFactorSum, self).__init__(
+            batch_shape, event_shape, validate_args=validate_args)
 
     @property
     def covariance_matrix(self):
-        sigmaU1 = self.U1 @ torch.diag(self.S1) @ self.U1.t()
+        sigmaU1 = (1 / self.n) * self.U1 @ torch.diag(self.S1) @ self.U1.t()
         sigmaU2 = self.U2 @ torch.diag(self.S2) @ self.U2.t()
         return sigmaU1 + sigmaU2
 
     @property
     def precision_matrix(self):
-        invS1 = self.U1 @ torch.diag(1 / self.S1) @ self.U1.t()
+        invS1 = self.n * self.U1 @ torch.diag(1 / self.S1) @ self.U1.t()
         W = self.U2
         invD = torch.diag(1 / self.S2)
 
@@ -154,7 +167,6 @@ class MultivariateNormalFactorSum(Distribution):
     @property
     def mean(self):
         return self.mu
-
 
     @functools.cached_property
     def cholesky(self):
@@ -181,7 +193,7 @@ class MultivariateNormalFactorSum(Distribution):
         diff = value - self.mu
         L = self.cholesky
         M = _batch_mahalanobis(L, diff)
-        half_log_det = self.L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
+        half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
         p = - half_log_det - 0.5 * (
             self._event_shape[0] * math.log(2 * math.pi) + M
         )
