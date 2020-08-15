@@ -5,72 +5,99 @@ from catvae.distributions import constraints
 import torch.distributions.constraints as torch_constraints
 from torch.distributions.distribution import Distribution
 from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.distributions.multivariate_normal import _batch_mahalanobis
+from torch.distributions.multivariate_normal import _batch_mv
 from torch.distributions.utils import _standard_normal, lazy_property
+import functools
 
 
-class MultivariateNormalFactor(MultivariateNormal):
+class MultivariateNormalFactor(Distribution):
 
-    def __init__(self, loc, U, diag):
-        """
+    def __init__(self, mu, U, diag, n, validate_args=None):
+        """ Asymptotic approximation of the multinomial distribution.
 
         Parameters
         ----------
-        loc : torch.Tensor
+        mu : torch.Tensor
             Mean of the distribution
         U : torch.Tensor
             Orthonormal factor matrix for decomposing covariance matrix.
         diag : torch.Tensor
             Diagonal matrix of eigenvalues for covariance decomposition
         n : torch.Tensor
-            Number of samples
+            Number of multinomial observations
+
+        Notes
+        -----
+        Can incorporate the number of samples in the diagonal
         """
-        arg_constraints = {'loc': torch_constraints.real_vector,
+        arg_constraints = {'mu': torch_constraints.real_vector,
                            'U': constraints.left_orthonormal,
-                           'diag': torch_constraints.positive}
-        self.loc = loc
+                           'diag': torch_constraints.positive,
+                           'n': torch_constraints.positive}
+        if mu.dim() < 1:
+            raise ValueError("`mu` must be at least one-dimensional.")
+        d = U.shape[-1]
+        if mu.shape[-1] != d - 1:
+            raise ValueError(f"The last dimension of `mu` must be {d-1}")
+
+        self.mu = mu
         self.U = U
         self.S = diag
-        # self.n = n
+        self.n = n
+        batch_shape, event_shape = self.mu.shape[:-1], self.mu.shape[-1:]
+        super(MultivariateNormalFactor, self).__init__(
+            batch_shape, event_shape, validate_args=validate_args)
 
     @property
     def covariance_matrix(self):
-        return self.U @ torch.diag(1 / self.S) @ self.U.t()
+        return (1 / self.n) * self.U @ torch.diag(self.S) @ self.U.t()
 
     @property
     def precision_matrix(self):
-        return self.U @ torch.diag(self.S) @ self.U.t()
+        return (self.n) * self.U @ torch.diag(1 / self.S) @ self.U.t()
 
     @property
     def mean(self):
-        return self.loc
+        return self.mu
 
     @property
     def variance(self):
-        # TODO: not sure what this should be
-        pass
+        raise NotImplementedError('`variance` is not implemented.')
+
+    @functools.cached_property
+    def cholesky(self):
+        sigma = (1 / self.n) * self.U @ torch.diag(self.S) @ self.U.t()
+        return torch.cholesky(sigma)
 
     def rsample(self, sample_shape):
         """ Eigenvalue decomposition can also be used for sampling
         https://stats.stackexchange.com/a/179275/79569
         """
-        D = torch.diag(torch.sqrt(S))
-        L = self.U @ D
+        L = self.cholesky
         shape = self._extended_shape(sample_shape)
-        eps = _standard_normal(shape, dtype=self.loc.dtype, device=self.loc.device)
-        return self.loc + _batch_mv(L, eps)
+        eps = _standard_normal(shape, dtype=self.mu.dtype, device=self.mu.device)
+        return self.mu + _batch_mv(L, eps)
 
     def log_prob(self, value):
-        # TODO
-        pass
+        if self._validate_args:
+            self._validate_sample(value)
+        diff = value - self.mu
+        L = self.cholesky
+        M = _batch_mahalanobis(L, diff)
+        half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
+        p = - half_log_det - 0.5 * (
+            self._event_shape[0] * math.log(2 * math.pi) + M
+        )
+        return p
 
     def entropy(self):
-        # TODO
-        pass
+        raise NotImplementedError('`entropy` is not implemented.')
 
 
-class MultivariateNormalFactorSum(MultivariateNormal):
+class MultivariateNormalFactorSum(Distribution):
 
-    def __init__(self, loc, U1, diag1, U2, diag2
+    def __init__(self, mu, U1, diag1, U2, diag2
     ):
         """ Multivariate normal distribution parameterized as the
             sum of two normal distributions whose covariances can be
@@ -78,14 +105,16 @@ class MultivariateNormalFactorSum(MultivariateNormal):
 
         Parameters
         ----------
-        loc : torch.Tensor
-            Mean of the distribution
+        mu1 : torch.Tensor
+            Mean of the first distribution
         U1 : torch.Tensor
             Left orthonormal factor matrix for decomposing the
             first covariance matrix.
         diag1 : torch.Tensor
             Diagonal matrix of eigenvalues for the
             first covariance decomposition
+        mu2 : torch.Tensor
+            Mean of the second distribution
         U2 : torch.Tensor
             Left orthonormal factor matrix for decomposing the
             second covariance matrix.
@@ -93,37 +122,70 @@ class MultivariateNormalFactorSum(MultivariateNormal):
             Diagonal matrix of eigenvalues for the
             second covariance decomposition
         """
-        arg_constraints = {'loc': torch_constraints.real_vector,
+        arg_constraints = {'mu': torch_constraints.real_vector,
                            'U1': constraints.left_orthonormal,
                            'diag1': torch_constraints.positive,
                            'U2': torch_constraints.real_vector,
                            'diag2': torch_constraints.positive
         }
+        self.mu = mu
+        self.U1 = U1
+        self.S1 = diag1
+        self.U2 = U2
+        self.S2 = diag2
 
     @property
     def covariance_matrix(self):
-        pass
+        sigmaU1 = self.U1 @ torch.diag(self.S1) @ self.U1.t()
+        sigmaU2 = self.U2 @ torch.diag(self.S2) @ self.U2.t()
+        return sigmaU1 + sigmaU2
 
     @property
     def precision_matrix(self):
-        pass
+        invS1 = self.U1 @ torch.diag(1 / self.S1) @ self.U1.t()
+        W = self.U2
+        invD = torch.diag(1 / self.S2)
+
+        # Woodbury identity
+        C = torch.inverse(invD + W.t() @ invS1 @ W)
+        invS = invS1 - invS1 @ W @ C @ W.t() @ invS1
+        return invS
 
     @property
     def mean(self):
-        pass
+        return self.mu
+
+
+    @functools.cached_property
+    def cholesky(self):
+        sigmaU1 = self.U1 @ torch.diag(self.S1) @ self.U1.t()
+        sigmaU2 = self.U2 @ torch.diag(self.S2) @ self.U2.t()
+        return torch.cholesky(sigmaU1 + sigmaU2)
 
     @property
     def variance(self):
-        pass
+        raise NotImplementedError('`variance` is not implemented.')
 
     def rsample(self, sample_shape):
         """ Eigenvalue decomposition can also be used for sampling
         https://stats.stackexchange.com/a/179275/79569
         """
-        pass
+        L = self.cholesky
+        shape = self._extended_shape(sample_shape)
+        eps = _standard_normal(shape, dtype=self.mu.dtype, device=self.mu.device)
+        return self.mu + _batch_mv(L, eps)
 
     def log_prob(self, value):
-        pass
+        if self._validate_args:
+            self._validate_sample(value)
+        diff = value - self.mu
+        L = self.cholesky
+        M = _batch_mahalanobis(L, diff)
+        half_log_det = self.L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
+        p = - half_log_det - 0.5 * (
+            self._event_shape[0] * math.log(2 * math.pi) + M
+        )
+        return p
 
     def entropy(self):
-        pass
+        raise NotImplementedError('`entropy` is not implemented.')
