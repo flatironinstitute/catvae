@@ -36,6 +36,14 @@ class TestMultivariateNormalFactor(unittest.TestCase):
         tt.assert_allclose(exp, dist.precision_matrix,
                            rtol=1, atol=1 / (math.sqrt(self.d)))
 
+    def test_log_det(self):
+        loc = torch.zeros(self.d - 1)
+        dist = MultivariateNormalFactor(loc, self.psi, 1 / self.D1, self.n)
+        cov = dist.covariance_matrix
+        exp = torch.log(torch.det(cov))
+        res = dist.log_det
+        tt.assert_allclose(int(res), int(exp))
+
     def test_rsample(self):
         loc = torch.ones(self.d - 1)
         dist = MultivariateNormalFactor(loc, self.psi, 1 / self.D1, self.n)
@@ -48,7 +56,7 @@ class TestMultivariateNormalFactor(unittest.TestCase):
         samples = dist.rsample([100])
         logp = dist.log_prob(samples)
         #self.assertEqual(logp.shape, [100])
-        self.assertAlmostEqual(float(logp.mean()), -120.2974, places=3)
+        self.assertAlmostEqual(int(logp.mean()), -123, places=3)
 
     def test_entropy(self):
         pass
@@ -89,6 +97,15 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
         exp = torch.inverse(sigmaU1 + sigmaU2)
         tt.assert_allclose(exp, dist.precision_matrix,
                            rtol=1, atol=1 / (math.sqrt(self.d)))
+    def test_log_det(self):
+        loc = torch.zeros(self.d - 1)
+        dist = MultivariateNormalFactorSum(
+            loc, self.psi, 1 / self.P,
+            self.W, self.D, self.n)
+        cov = dist.covariance_matrix
+        exp = torch.log(torch.det(cov))
+        res = dist.log_det
+        tt.assert_allclose(res, exp, rtol=1, atol=1)
 
     def test_rsample(self):
         loc = torch.ones(self.d - 1)
@@ -105,7 +122,6 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
             self.W, self.D, self.n)
         samples = dist.rsample([100])
         logp = dist.log_prob(samples)
-        #self.assertEqual(logp.shape, [100])
         self.assertEqual(int(logp.mean()), -386)
 
     def test_entropy(self):

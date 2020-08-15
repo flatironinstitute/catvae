@@ -8,6 +8,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.distributions.multivariate_normal import _batch_mv
 from torch.distributions.utils import _standard_normal, lazy_property
+import numpy as np
 import functools
 
 
@@ -70,6 +71,11 @@ class MultivariateNormalFactor(Distribution):
         sigma = (1 / self.n) * self.U @ torch.diag(self.S) @ self.U.t()
         return torch.cholesky(sigma)
 
+    @property
+    def log_det(self):
+        d = self.U.shape[-1]
+        return torch.sum(torch.log(self.S)) + d * np.log(1 / self.n)
+
     def rsample(self, sample_shape):
         """ Eigenvalue decomposition can also be used for sampling
         https://stats.stackexchange.com/a/179275/79569
@@ -110,7 +116,7 @@ class MultivariateNormalFactorSum(Distribution):
             Left orthonormal factor matrix for decomposing the
             first covariance matrix.
         diag1 : torch.Tensor
-            Diagonal matrix of eigenvalues for the
+        `    Diagonal matrix of eigenvalues for the
             first covariance decomposition
         mu2 : torch.Tensor
             Mean of the second distribution
@@ -165,6 +171,18 @@ class MultivariateNormalFactorSum(Distribution):
         return invS
 
     @property
+    def log_det(self):
+        # Matrix determinant lemma, similar to the Woodbury identity
+        invS1 = self.n * self.U1 @ torch.diag(1 / self.S1) @ self.U1.t()
+        W = self.U2
+        d = self.U1.shape[-1]
+        invD = torch.diag(1 / self.S2)
+        logdet_A = torch.sum(torch.log(self.S1)) + d * np.log(1 / self.n)
+        logdet_C = torch.log(torch.det(invD + W.t() @ invS1 @ W))
+        logdet_D = torch.sum(torch.log(self.S2))
+        return logdet_A + logdet_C + logdet_D
+
+    @property
     def mean(self):
         return self.mu
 
@@ -200,4 +218,5 @@ class MultivariateNormalFactorSum(Distribution):
         return p
 
     def entropy(self):
+
         raise NotImplementedError('`entropy` is not implemented.')
