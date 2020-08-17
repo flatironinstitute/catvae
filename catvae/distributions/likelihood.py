@@ -33,9 +33,9 @@ def expectation_mvn_factor_sum_multinomial(
     lower bound for this expectation.  See Blei and Lafferty et al.
     """
     mu_eta = q.mean
-    cov_eta = torch.diagonal(q.covariance_matrix)
+    cov_eta = torch.diagonal(psi @ q.covariance_matrix @ psi.t())
     logits = psi @ mu_eta
-    exp_ln = torch.exp(mu_eta + 0.5 * cov_eta)
+    exp_ln = torch.exp(psi @ mu_eta + 0.5 * cov_eta)
     # approximation for normalization factor
     denom = (1 / gamma) * exp_ln.sum(axis=-1) + torch.log(gamma) - 1
     return K(x) + x @ (logits - denom)

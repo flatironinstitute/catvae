@@ -9,7 +9,7 @@ from catvae.distributions.mvn import MultivariateNormalFactor
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 from gneiss.balances import _balance_basis
 from gneiss.cluster import random_linkage
-
+import numpy as np
 import torch.testing as tt
 import unittest
 
@@ -31,7 +31,10 @@ class TestExpectations(unittest.TestCase):
         self.psi = torch.Tensor(psi.copy())
 
     def test_expectation_mvn_factor_sum_multinomial(self):
+        np.random.seed(0)
         torch.manual_seed(0)
+        torch.random.initial_seed()
+
         loc = torch.ones(self.d - 1)
         q = MultivariateNormalFactorSum(
             loc, self.psi, 1 / self.P,
@@ -45,9 +48,10 @@ class TestExpectations(unittest.TestCase):
         p = Multinomial(total_count=self.n, logits=logits)
         lp = p.log_prob(x)
         exp = lp.mean()
-        gam = torch.Tensor([1.])
+        gam = torch.Tensor([25000.])
         res = expectation_mvn_factor_sum_multinomial(
             q, self.psi.t(), x, gam)
+        print(float(exp), float(res))
         self.assertGreater(float(exp), float(res))
 
     def test_expectation_joint_mvn_factor_mvn_factor_sum(self):
