@@ -4,7 +4,7 @@ from catvae.distributions.mvn import MultivariateNormalFactor
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 
 
-torch.pi = torch.acos(torch.zeros(1)).item() * 2
+torch.pi = torch.Tensor([torch.acos(torch.zeros(1)).item() * 2])
 
 
 def K(x):
@@ -43,8 +43,7 @@ def expectation_mvn_factor_sum_multinomial(
 
 def expectation_joint_mvn_factor_mvn_factor_sum(
         qeta : MultivariateNormalFactorSum,
-        qz : MultivariateNormal,
-        p : MultivariateNormalFactor):
+        qz : MultivariateNormal, s2 : torch.Tensor):
     """ Part of the second expectation KL(q||p)
 
     Parameters
@@ -53,19 +52,18 @@ def expectation_joint_mvn_factor_mvn_factor_sum(
        q(\eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} \Psi^T diag(x)^{-1} \Psi)
     q2 : MultivariateNormal
        q(z | x) = N(V(h(x)), WDW^T)
-    p : MultivariateNormalFactor
-       p(\eta | z) = N(Wz, \sigma^2 I )
+    s2 : torch.Tensor
+       Standard deviation of p(\eta | z)
     """
-
+    W = qeta.U2
     d = W.shape[-2] + 1
-    sigma = q1.covariance_matrix
-    s2 = torch.diagonal(p.scale_tril).mean(1)
-    tr_wdw = torch.trace(q2.covariance_matrix)
+    sigma = qeta.covariance_matrix
+    tr_wdw = torch.trace(W @ qz.covariance_matrix @ W.t())
     tr_S = torch.trace(sigma)
 
     norm_s2 = (-1 / (2 * s2))
     half_logdet = - (d / 2) * (torch.log(2 * torch.pi) + torch.log(s2))
-    print(tr_wdw, tr_S, half_logdet, norm_s2)
+    # print(tr_wdw, tr_S, half_logdet, norm_s2)
     res = norm_s2 * (tr_wdw + tr_S) + half_logdet
     return res
 

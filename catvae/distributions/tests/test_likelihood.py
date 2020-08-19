@@ -4,7 +4,7 @@ from catvae.distributions.likelihood import (
     expectation_mvn_factor_sum_mvn_factor_sum
 )
 import torch
-from torch.distributions import Multinomial, MultivariateNormal
+from torch.distributions import Multinomial, MultivariateNormal, Normal
 from catvae.distributions.mvn import MultivariateNormalFactor
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 from gneiss.balances import _balance_basis
@@ -21,11 +21,14 @@ class TestExpectations(unittest.TestCase):
         k = 4
         torch.manual_seed(0)
         self.W = torch.randn((d - 1, k))
+        self.V = torch.randn((k, d))
         self.D = torch.rand(k)
         self.P = torch.rand(d)
         self.P = self.P / torch.sum(self.P)
         self.n = n
         self.d = d
+        self.x = torch.rand(d)
+        self.hx = torch.log(self.x) - torch.log(self.x).mean()
 
         psi = _balance_basis(random_linkage(self.d))[0]
         self.psi = torch.Tensor(psi.copy())
