@@ -51,11 +51,36 @@ class TestExpectations(unittest.TestCase):
         gam = torch.Tensor([25000.])
         res = expectation_mvn_factor_sum_multinomial(
             q, self.psi.t(), x, gam)
-        print(float(exp), float(res))
+        self.assertFalse(np.isinf(float(res)))
         self.assertGreater(float(exp), float(res))
 
     def test_expectation_joint_mvn_factor_mvn_factor_sum(self):
-        pass
+        np.random.seed(0)
+        torch.manual_seed(0)
+        torch.random.initial_seed()
+        s2 = 2
+        samples = 10000
+        loc = torch.ones(self.d - 1)  # logit units
+        std = torch.ones(self.d - 1) * s2
+        qeta = MultivariateNormalFactorSum(
+            self.W @ self.V @ self.hx,
+            self.psi, 1 / self.P,
+            self.W, self.D, self.n)
+        #qz = MultivariateNormalFactor(loc, self.W, self.D, 1)
+        print(torch.diag(self.D))
+        qz = MultivariateNormal(
+            self.V @ self.hx,
+            scale_tril=torch.diag(torch.sqrt(self.D)))
+        loc = torch.zeros(self.d - 1)
+        s2 = torch.Tensor([s2])
+
+        # MC samples for validation
+        eta = qeta.rsample([samples])
+        z = qz.rsample([samples])
+        lp = Normal(z @ self.W.t(), std).log_prob(eta)  # p log likelihood
+        exp = torch.mean(lp)
+        res = expectation_joint_mvn_factor_mvn_factor_sum(qeta, qz, s2)
+        self.assertAlmostEqual(float(exp), float(res))
 
     def test_expectation_mvn_factor_sum_mvn_factor_sum(self):
         pass

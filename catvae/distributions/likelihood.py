@@ -56,16 +56,17 @@ def expectation_joint_mvn_factor_mvn_factor_sum(
     p : MultivariateNormalFactor
        p(\eta | z) = N(Wz, \sigma^2 I )
     """
-    wvx = q1.mean
-    d = wvx.shape[-1]   # TODO: make sure this dimension is correct
+
+    d = W.shape[-2] + 1
     sigma = q1.covariance_matrix
     s2 = torch.diagonal(p.scale_tril).mean(1)
     tr_wdw = torch.trace(q2.covariance_matrix)
-    xtvtwtwvx = wvx.t() @ wvx
     tr_S = torch.trace(sigma)
-    hxtShx = wvx.t() @ sigma @ wvx
-    res = - (tr_wdw  - xtvtwtwvx + tr_S + hxtShx) / (2 * s2) + \
-          - (d / 2) * (torch.log(2 * torch.pi) + torch.log(s2))
+
+    norm_s2 = (-1 / (2 * s2))
+    half_logdet = - (d / 2) * (torch.log(2 * torch.pi) + torch.log(s2))
+    print(tr_wdw, tr_S, half_logdet, norm_s2)
+    res = norm_s2 * (tr_wdw + tr_S) + half_logdet
     return res
 
 

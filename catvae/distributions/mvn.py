@@ -68,8 +68,8 @@ class MultivariateNormalFactor(Distribution):
 
     @functools.cached_property
     def cholesky(self):
-        sigma = (1 / self.n) * self.U @ torch.diag(self.S) @ self.U.t()
-        return torch.cholesky(sigma)
+        cov = self.covariance_matrix
+        return torch.cholesky(cov)
 
     @property
     def log_det(self):
@@ -188,9 +188,8 @@ class MultivariateNormalFactorSum(Distribution):
 
     @functools.cached_property
     def cholesky(self):
-        sigmaU1 = self.U1 @ torch.diag(self.S1) @ self.U1.t()
-        sigmaU2 = self.U2 @ torch.diag(self.S2) @ self.U2.t()
-        return torch.cholesky(sigmaU1 + sigmaU2)
+        cov = self.covariance_matrix
+        return torch.cholesky(cov)
 
     @property
     def variance(self):
