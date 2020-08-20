@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
-    CosineAnnealingWarmRestarts, StepLR, CyclicLR
+    CosineAnnealingWarmRestarts, StepLR
 )
 from catvae.dataset.biom import collate_single_f, BiomDataset
 from catvae.models import LinearCatVAE
@@ -33,17 +33,12 @@ class LightningVAE(pl.LightningModule):
 
         # a sneak peek into file types to initialize model
         n_input = load_table(self.hparams.train_biom).shape[0]
-        n_batch = 0
-        if self.hparams.sample_metadata is not None:
-            n_batch = len(pd.read_table(self.hparams.sample_metadata)[
-                self.hparams.batch_category
-            ].value_counts())
 
         self.model = LinearCatVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
-            use_analytic_elbo=hparams.use_analytic_elbo,
-            basis=basis
+            use_analytic_elbo=self.hparams.use_analytic_elbo,
+            basis=basis,
             deep_decoder=self.hparams.deep_decoder,
             decoder_depth=self.hparams.n_layers,
             imputer=self.hparams.imputer)
@@ -105,7 +100,8 @@ class LightningVAE(pl.LightningModule):
         loss = self.compute_loss(rec_loss, kl_local)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
-            current_lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
         else:
             current_lr = self.hparams.learning_rate
         tensorboard_logs = {
@@ -133,9 +129,8 @@ class LightningVAE(pl.LightningModule):
             kl_diffs.append(e)
         kl_diff = np.mean(kl_diffs)
         tensorboard_logs = {'validation_loss': loss, 'pred_kl': kl_diff,
-            'val_reconstruction_loss': rec_loss.mean(),
-            'val_latent_loss': kl_local.mean()
-        }
+                            'val_reconstruction_loss': rec_loss.mean(),
+                            'val_latent_loss': kl_local.mean()}
 
         # log the learning rate
         return {'validation_loss': loss, 'log': tensorboard_logs}
@@ -162,9 +157,11 @@ class LightningVAE(pl.LightningModule):
             ms = metric_subspace(
                 self.model, self.gt_eigvectors, self.gt_eigs)
             ma = metric_alignment(self.model, self.gt_eigvectors)
-            tlog = {'subspace_distance': ms, 'alignment' : ma}
-            self.logger.experiment.add_scalar('subspace_distance', ms, self.global_step)
-            self.logger.experiment.add_scalar('alignment', ma, self.global_step)
+            tlog = {'subspace_distance': ms, 'alignment': ma}
+            self.logger.experiment.add_scalar(
+                'subspace_distance', ms, self.global_step)
+            self.logger.experiment.add_scalar(
+                'alignment', ma, self.global_step)
             tensorboard_logs = {**tensorboard_logs, **tlog}
 
         return {'val_loss': loss, 'log': tensorboard_logs}
