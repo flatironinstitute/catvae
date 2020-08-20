@@ -39,7 +39,7 @@ class LightningVAE(pl.LightningModule):
             hidden_dim=self.hparams.n_latent,
             use_analytic_elbo=self.hparams.use_analytic_elbo,
             basis=basis,
-            deep_decoder=self.hparams.deep_decoder,
+            deep_decoder=False,
             decoder_depth=self.hparams.n_layers,
             imputer=self.hparams.imputer)
 
@@ -218,6 +218,12 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--batch-size', help='Training batch size',
             required=False, type=int, default=32)
+        parser.add_argument(
+            '--use-analytic-elbo', help='Use analytic formulation of elbo.',
+            required=False, type=bool, default=True)
+        parser.add_argument(
+            '--imputer', help='Imputation technique to use.',
+            required=False, type=bool, default=None)
         parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
