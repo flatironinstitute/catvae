@@ -18,6 +18,9 @@ def expectation_mvn_factor_sum_multinomial(
         gamma : torch.Tensor):
     """ Lower bound for th efirst expectation involving
         multinomial reconstruction error
+
+    Parameters
+    ----------
     q : MultivariateNormalFactorSum
        q(\eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} \Psi^T diag(x)^{-1} \Psi)
     psi : torch.Tensor

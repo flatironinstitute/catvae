@@ -17,13 +17,11 @@ from catvae.distributions.mvn import MultivariateNormalFactorSum
 
 
 LOG_2_PI = np.log(2.0 * np.pi)
-
-
 class LinearCatVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
                  basis=None, use_analytic_elbo=True, use_batch_norm=False,
-                 deep_decoder=False, decoder_depth=1, imputer=None):
+                 deep_decoder=False, decoder_depth=1, imputer=None, mc_samples=1):
         super(LinearVAE, self).__init__()
 
         self.input_dim = input_dim
@@ -34,7 +32,7 @@ class LinearCatVAE(nn.Module):
             self.Psi = _balance_basis(tree)[0]
         else:
             self.Psi = basis
-        self.Sigma = AsymptoticCovariance(self.Psi)
+        self.mc_samples = mc_samples
 
         self.use_analytic_elbo = use_analytic_elbo
         self.use_batch_norm = use_batch_norm
@@ -76,9 +74,7 @@ class LinearCatVAE(nn.Module):
             self.decoder = nn.Linear(hidden_dim, input_dim, bias=False)
 
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-
         self.encoder.weight.data.normal_(0.0, init_scale)
-
         if isinstance(self.decoder, nn.Sequential):
             for decoder_layer in self.decoder:
                 if isinstance(decoder_layer, nn.Linear):
@@ -148,7 +144,7 @@ class LinearCatVAE(nn.Module):
         hx = ilr(x, self.Psi)
         z_mean = self.encoder(hx)
         if not self.use_analytic_elbo:
-            eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+            eps = torch.normal(torch.zeros_like(z_mean), self.mc_samples)
             z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
             if self.use_batch_norm:
                 z_sample = self.bn(z_sample)

@@ -6,11 +6,9 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR, CyclicLR
 )
-from mavi.dataset.biom import collate_single_f, BiomDataset
-from mavi.vae import CountVAE
-from mavi.linear_vae import LinearVAE
-from mavi.utils import alr_basis
-from mavi.metrics import (
+from catvae.dataset.biom import collate_single_f, BiomDataset
+from catvae.models import LinearCatVAE
+from catvae.metrics import (
     metric_subspace, metric_transpose_theorem, metric_alignment)
 import pytorch_lightning as pl
 from skbio import TreeNode
@@ -22,10 +20,10 @@ from scipy.stats import entropy
 import numpy as np
 
 
-class LightningCountVAE(pl.LightningModule):
+class LightningVAE(pl.LightningModule):
 
     def __init__(self, args):
-        super(LightningCountVAE, self).__init__()
+        super(LightningVAE, self).__init__()
         self.hparams = args
         if self.hparams.basis_file is not None:
             tree = TreeNode.read(self.hparams.basis_file)
@@ -41,14 +39,15 @@ class LightningCountVAE(pl.LightningModule):
                 self.hparams.batch_category
             ].value_counts())
 
-        self.model = CountVAE(n_input,
-                              n_batch,
-                              self.hparams.n_latent,
-                              self.hparams.n_layers,
-                              self.hparams.dropout_rate,
-                              self.hparams.dispersion,
-                              self.hparams.reconstruction_loss,
-                              basis)
+        self.model = LinearCatVAE(
+            n_input,
+            hidden_dim=self.hparams.n_latent,
+            use_analytic_elbo=hparams.use_analytic_elbo,
+            basis=basis
+            deep_decoder=self.hparams.deep_decoder,
+            decoder_depth=self.hparams.n_layers,
+            imputer=self.hparams.imputer)
+
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -202,10 +201,6 @@ class LightningCountVAE(pl.LightningModule):
         parser.add_argument(
             '--val-biom', help='Validation biom file', required=True)
         parser.add_argument(
-            '--sample-metadata', help='Sample metadata file', required=False)
-        parser.add_argument(
-            '--batch-category', help='Batch category', required=False)
-        parser.add_argument(
             '--n-latent', help='Latent embedding dimension.',
             required=False, type=int, default=10)
         parser.add_argument(
@@ -215,20 +210,6 @@ class LightningCountVAE(pl.LightningModule):
             '--n-samples',
             help='Number of monte carlo samples for computing expectations.',
             required=False, type=int, default=1)
-        parser.add_argument(
-            '--dropout-rate', help='Encoder dropout rate.',
-            required=False, type=float, default=0)
-        parser.add_argument(
-            '--use-relu', help='Use relu or linear activation for Encoder',
-            required=False, type=bool, default=False)
-        parser.add_argument(
-            '--dispersion',
-            help='Dispersion specification (options include gene, gene-batch)',
-            required=False, type=str, default='gene')
-        parser.add_argument(
-            '--reconstruction-loss',
-            help='Reconstruction loss (options include nb, mln, multinomial).',
-            required=False, type=str, default='nb')
         parser.add_argument(
             '--basis-file',
             help=('Newick file to specify basis from bifurcating tree.'
