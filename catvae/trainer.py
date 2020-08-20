@@ -50,8 +50,8 @@ class LightningVAE(pl.LightningModule):
         self.gt_eigvectors = gt_eigvectors
         self.gt_eigs = gt_eigs
 
-    def forward(self, X, X_smoothed):
-        return self.model(X, X_smoothed)
+    def forward(self, X):
+        return self.model(X)
 
     def initialize_logging(self, root_dir='./', logging_path=None):
         if logging_path is None:
@@ -94,10 +94,8 @@ class LightningVAE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         self.model.train()
-        counts, batches, smoothed_counts = batch
-        rec_loss, kl_local = self.model(
-            counts, smoothed_counts, n_samples=self.hparams.n_samples)
-        loss = self.compute_loss(rec_loss, kl_local)
+        counts = batch
+        loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -105,32 +103,27 @@ class LightningVAE(pl.LightningModule):
         else:
             current_lr = self.hparams.learning_rate
         tensorboard_logs = {
-            'train_loss': loss, 'elbo': -loss, 'lr': current_lr,
-            'train_reconstruction_loss': rec_loss.mean(),
-            'train_latent_loss': kl_local.mean()
+            'train_loss': loss, 'elbo': -loss, 'lr': current_lr
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_idx):
         self.model.train()
-        counts, batches, smoothed_counts = batch
-        rec_loss,  kl_local = self.model(counts, smoothed_counts)
-        loss = self.compute_loss(rec_loss, kl_local)
+        counts = batch
+        loss = self.model(counts)
         assert torch.isnan(loss).item() is False
 
         # Record the actual loss.
-        res = self.model.inference(smoothed_counts)
-        pred_probs = closure(alr_inv(res['px_mean'].cpu().detach().numpy()))
-        kl_diffs = []
-        cnts = closure(counts.cpu().detach().numpy())
-        for i in range(counts.shape[0]):
-            e = entropy(cnts[i], pred_probs[i])
-            kl_diffs.append(e)
-        kl_diff = np.mean(kl_diffs)
-        tensorboard_logs = {'validation_loss': loss, 'pred_kl': kl_diff,
-                            'val_reconstruction_loss': rec_loss.mean(),
-                            'val_latent_loss': kl_local.mean()}
+        # res = self.model.inference(smoothed_counts)
+        # pred_probs = closure(alr_inv(res['px_mean'].cpu().detach().numpy()))
+        # kl_diffs = []
+        # cnts = closure(counts.cpu().detach().numpy())
+        # for i in range(counts.shape[0]):
+        #     e = entropy(cnts[i], pred_probs[i])
+        #     kl_diffs.append(e)
+        # kl_diff = np.mean(kl_diffs)
+        tensorboard_logs = {'validation_loss': loss}
 
         # log the learning rate
         return {'validation_loss': loss, 'log': tensorboard_logs}

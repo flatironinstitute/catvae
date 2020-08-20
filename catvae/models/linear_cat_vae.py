@@ -3,7 +3,7 @@ import torch.nn as nn
 from gneiss.cluster import random_linkage
 from gneiss.balances import _balance_basis
 from catvae.composition import closure, ilr
-from catvae.distributions.likelidhood import (
+from catvae.distributions.likelihood import (
     expectation_mvn_factor_sum_multinomial,
     expectation_joint_mvn_factor_mvn_factor_sum,
 )
@@ -28,9 +28,10 @@ class LinearCatVAE(nn.Module):
         # Psi must be dimension D - 1 x D
         if basis is None:
             tree = random_linkage(self.input_dim)
-            self.Psi = _balance_basis(tree)[0]
+            Psi = torch.Tensor(_balance_basis(tree)[0].copy())
         else:
-            self.Psi = basis
+            Psi = torch.Tensor(basis.copy())
+        self.register_buffer('Psi', Psi)
         self.mc_samples = mc_samples
 
         self.use_analytic_elbo = use_analytic_elbo

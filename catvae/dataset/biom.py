@@ -91,9 +91,5 @@ class BiomDataset(Dataset):
 
 def collate_single_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
-    smoothed_counts_list = np.vstack([np.random.dirichlet(b[0] + 1) for b in batch])
-    batch_list = np.array([b[1] for b in batch], dtype=np.float32)
     counts = torch.from_numpy(counts_list).float()
-    batches = torch.from_numpy(batch_list).float()
-    smoothed_counts = torch.from_numpy(smoothed_counts_list).float()
-    return counts, batches, smoothed_counts
+    return counts

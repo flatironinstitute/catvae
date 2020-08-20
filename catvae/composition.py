@@ -1,5 +1,5 @@
 import numpy as np
-from skbio.stats.composition import closure
+import torch
 
 
 def closure(x):
@@ -23,7 +23,7 @@ def ilr(p, basis):
 
 
 def ilr_inv(eta, basis):
-    return closure(eta @ basis)
+    return torch.nn.Softmax(eta @ basis, dim=-1)
 
 
 def alr_basis(D, denom=0):

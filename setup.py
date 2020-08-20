@@ -38,10 +38,10 @@ setup(name='catvae',
           'torch==1.6.0',
           'seaborn==0.10.1',
           'jupyter',
-          'scvi==0.2.2',
           'gneiss==0.4.6',
           'scikit-bio==0.5.6',
-          'tensorboard==2.1.1'
+          'tensorboard==2.1.1',
+          'pytorch-lightning==0.9'
       ],
       classifiers=classifiers,
       package_data={},
