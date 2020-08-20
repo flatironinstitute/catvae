@@ -15,9 +15,6 @@ import torch.testing as tt
 import unittest
 
 
-
-
-
 class TestExpectations(unittest.TestCase):
     def setUp(self):
         n = 500
@@ -64,7 +61,6 @@ class TestExpectations(unittest.TestCase):
         samples = 10000
         loc = torch.ones(self.d - 1)  # logit units
         std = torch.Tensor([std])
-
         qeta = MultivariateNormalFactorSum(
             self.W @ self.V @ self.hx,
             self.psi, 1 / self.P,
