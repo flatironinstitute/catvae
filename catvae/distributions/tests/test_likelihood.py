@@ -1,17 +1,14 @@
 from catvae.distributions.likelihood import (
     expectation_mvn_factor_sum_multinomial,
-    expectation_joint_mvn_factor_mvn_factor_sum,
-    expectation_mvn_factor_sum_mvn_factor_sum
+    expectation_joint_mvn_factor_mvn_factor_sum
 )
 import torch
 from torch.distributions import Multinomial, MultivariateNormal, Normal
-from catvae.distributions.mvn import MultivariateNormalFactor
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 from catvae.distributions.utils import seed_all
 from gneiss.balances import _balance_basis
 from gneiss.cluster import random_linkage
 import numpy as np
-import torch.testing as tt
 import unittest
 
 
@@ -59,7 +56,6 @@ class TestExpectations(unittest.TestCase):
         seed_all(2)
         std = 1
         samples = 10000
-        loc = torch.ones(self.d - 1)  # logit units
         std = torch.Tensor([std])
         qeta = MultivariateNormalFactorSum(
             self.W @ self.V @ self.hx,
@@ -75,7 +71,7 @@ class TestExpectations(unittest.TestCase):
         lp = Normal(z @ self.W.t(), std).log_prob(eta)  # p log likelihood
         exp = torch.sum(lp, dim=1).mean()
         res = expectation_joint_mvn_factor_mvn_factor_sum(qeta, qz, std)
-        self.assertAlmostEqual(float(exp), float(res) , places=0)
+        self.assertAlmostEqual(float(exp), float(res), places=0)
 
 
 if __name__ == '__main__':

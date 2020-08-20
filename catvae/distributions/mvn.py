@@ -4,10 +4,9 @@ import torch
 from catvae.distributions import constraints
 import torch.distributions.constraints as torch_constraints
 from torch.distributions.distribution import Distribution
-from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.distributions.multivariate_normal import _batch_mv
-from torch.distributions.utils import _standard_normal, lazy_property
+from torch.distributions.utils import _standard_normal
 import numpy as np
 import functools
 
@@ -85,7 +84,8 @@ class MultivariateNormalFactor(Distribution):
         """
         L = self.cholesky
         shape = self._extended_shape(sample_shape)
-        eps = _standard_normal(shape, dtype=self.mu.dtype, device=self.mu.device)
+        eps = _standard_normal(shape, dtype=self.mu.dtype,
+                               device=self.mu.device)
         return self.mu + _batch_mv(L, eps)
 
     def log_prob(self, value):
@@ -137,8 +137,7 @@ class MultivariateNormalFactorSum(Distribution):
                            'diag1': torch_constraints.positive,
                            'U2': torch_constraints.real_vector,
                            'diag2': torch_constraints.positive,
-                           'n': torch_constraints.positive
-        }
+                           'n': torch_constraints.positive}
 
         if mu.dim() < 1:
             raise ValueError("`mu` must be at least one-dimensional.")
@@ -204,7 +203,8 @@ class MultivariateNormalFactorSum(Distribution):
         """
         L = self.cholesky
         shape = self._extended_shape(sample_shape)
-        eps = _standard_normal(shape, dtype=self.mu.dtype, device=self.mu.device)
+        eps = _standard_normal(shape, dtype=self.mu.dtype,
+                               device=self.mu.device)
         return self.mu + _batch_mv(L, eps)
 
     def log_prob(self, value):

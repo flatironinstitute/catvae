@@ -28,7 +28,7 @@ class TestMultivariateNormalFactor(unittest.TestCase):
         loc = torch.zeros(self.d - 1)
         dist = MultivariateNormalFactor(loc, self.psi, 1 / self.D1, self.n)
         cov = dist.covariance_matrix
-        self.assertEqual(cov.shape, (self.d -1 , self.d - 1))
+        self.assertEqual(cov.shape, (self.d - 1, self.d - 1))
 
     def test_precision_matrix(self):
         # tests how accurately the inverse covariance matrix can be computed
@@ -58,7 +58,6 @@ class TestMultivariateNormalFactor(unittest.TestCase):
         dist = MultivariateNormalFactor(loc, self.psi, 1 / self.D1, self.n)
         samples = dist.rsample([100])
         logp = dist.log_prob(samples)
-        #self.assertEqual(logp.shape, [100])
         self.assertAlmostEqual(int(logp.mean()), -123, places=3)
 
     def test_entropy(self):
@@ -87,7 +86,7 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
             loc, self.psi, 1 / self.P,
             self.W, self.D, self.n)
         cov = dist.covariance_matrix
-        self.assertEqual(cov.shape, (self.d -1 , self.d - 1))
+        self.assertEqual(cov.shape, (self.d - 1, self.d - 1))
 
     def test_precision_matrix(self):
         # tests how accurately the inverse covariance matrix can be computed
@@ -95,11 +94,13 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
         dist = MultivariateNormalFactorSum(
             loc, self.psi, 1 / self.P,
             self.W, self.D, self.n)
-        sigmaU1 = (1 / self.n) * self.psi @ torch.diag(1 / self.P) @ self.psi.t()
+        invP = torch.diag(1 / self.P)
+        sigmaU1 = (1 / self.n) * self.psi @  invP @ self.psi.t()
         sigmaU2 = self.W @ torch.diag(self.D) @ self.W.t()
         exp = torch.inverse(sigmaU1 + sigmaU2)
         tt.assert_allclose(exp, dist.precision_matrix,
                            rtol=1, atol=1 / (math.sqrt(self.d)))
+
     def test_log_det(self):
         loc = torch.zeros(self.d - 1)
         dist = MultivariateNormalFactorSum(
@@ -135,7 +136,6 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
     def test_entropy(self):
         seed_all(2)
         std = 1
-        samples = 10000
         loc = torch.ones(self.d - 1)  # logit units
         std = torch.Tensor([std])
 

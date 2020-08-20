@@ -1,6 +1,5 @@
 import torch
 from torch.distributions import MultivariateNormal
-from catvae.distributions.mvn import MultivariateNormalFactor
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 
 
@@ -14,15 +13,15 @@ def K(x):
 
 
 def expectation_mvn_factor_sum_multinomial(
-        q : MultivariateNormalFactorSum, psi : torch.Tensor, x : torch.Tensor,
-        gamma : torch.Tensor):
-    """ Lower bound for th efirst expectation involving
+        q: MultivariateNormalFactorSum, psi: torch.Tensor, x: torch.Tensor,
+        gamma: torch.Tensor):
+    r""" Lower bound for th efirst expectation involving
         multinomial reconstruction error
 
     Parameters
     ----------
     q : MultivariateNormalFactorSum
-       q(\eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} \Psi^T diag(x)^{-1} \Psi)
+       q(eta | x) = N(W V(h(x)), WDW^T + \frac{1}{nf} Psi^T diag(x)^{-1} Psi)
     psi : torch.Tensor
        ILR basis of dimension D x (D - 1)
     x : torch.Tensor
@@ -45,18 +44,18 @@ def expectation_mvn_factor_sum_multinomial(
 
 
 def expectation_joint_mvn_factor_mvn_factor_sum(
-        qeta : MultivariateNormalFactorSum,
-        qz : MultivariateNormal, std : torch.Tensor):
+        qeta: MultivariateNormalFactorSum,
+        qz: MultivariateNormal, std: torch.Tensor):
     """ Part of the second expectation KL(q||p)
 
     Parameters
     ----------
     q1 : MultivariateNormalFactorSum
-       q(\eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} \Psi^T diag(x)^{-1} \Psi)
+       q(eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} Psi^T diag(x)^{-1} Psi)
     q2 : MultivariateNormal
        q(z | x) = N(V(h(x)), WDW^T)
     std : torch.Tensor
-       Standard deviation of p(\eta | z)
+       Standard deviation of p(eta | z)
     """
     W = qeta.U2
     d = W.shape[-2] + 1
