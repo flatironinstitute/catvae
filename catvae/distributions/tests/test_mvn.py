@@ -1,6 +1,8 @@
 import unittest
 from catvae.distributions.mvn import MultivariateNormalFactor
 from catvae.distributions.mvn import MultivariateNormalFactorSum
+from torch.distributions import MultivariateNormal
+from catvae.distributions.utils import seed_all
 import torch
 import torch.testing as tt
 from gneiss.balances import _balance_basis
@@ -13,7 +15,7 @@ class TestMultivariateNormalFactor(unittest.TestCase):
     def setUp(self):
         n = 200
         d = 100
-        torch.manual_seed(0)
+        seed_all(0)
         self.D1 = torch.rand(d)
         self.D1 = self.D1 / torch.sum(self.D1)
         self.n = n
@@ -128,10 +130,26 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
             self.W, self.D, self.n)
         samples = dist.rsample([100])
         logp = dist.log_prob(samples)
-        self.assertEqual(int(logp.mean()), -386)
+        self.assertEqual(int(logp.mean()), -132)
 
     def test_entropy(self):
-        pass
+        seed_all(2)
+        std = 1
+        samples = 10000
+        loc = torch.ones(self.d - 1)  # logit units
+        std = torch.Tensor([std])
+
+        qeta = MultivariateNormalFactorSum(
+            loc,
+            self.psi, 1 / self.P,
+            self.W, self.D, self.n)
+
+        qtest = MultivariateNormal(
+            loc=loc,
+            covariance_matrix=qeta.covariance_matrix)
+
+        self.assertAlmostEqual(
+            float(qeta.entropy()), float(qtest.entropy()), places=0)
 
 
 if __name__ == '__main__':

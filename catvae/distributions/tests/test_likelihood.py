@@ -69,7 +69,6 @@ class TestExpectations(unittest.TestCase):
             self.W @ self.V @ self.hx,
             self.psi, 1 / self.P,
             self.W, self.D, self.n)
-        #qz = MultivariateNormalFactor(loc, self.W, self.D, 1)
         qz = MultivariateNormal(
             self.V @ self.hx,
             scale_tril=torch.diag(torch.sqrt(self.D)))
@@ -81,9 +80,6 @@ class TestExpectations(unittest.TestCase):
         exp = torch.sum(lp, dim=1).mean()
         res = expectation_joint_mvn_factor_mvn_factor_sum(qeta, qz, std)
         self.assertAlmostEqual(float(exp), float(res) , places=0)
-
-    def test_expectation_mvn_factor_sum_mvn_factor_sum(self):
-        pass
 
 
 if __name__ == '__main__':

@@ -65,31 +65,3 @@ def expectation_joint_mvn_factor_mvn_factor_sum(
     half_logdet = - (d / 2) * (torch.log(2 * torch.pi) + torch.log(s2))
     res = norm_s2 * (tr_wdw + tr_S) + half_logdet
     return res
-
-
-def expectation_mvn_factor_sum_mvn_factor_sum(
-        q : MultivariateNormalFactorSum, x : torch.Tensor):
-    """ Part of the second expectation KL(q||p)
-
-    Parameters
-    ----------
-    q1 : MultivariateNormalFactorSum
-       q(\eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} \Psi^T diag(x)^{-1} \Psi)
-    x : torch.Tensor
-       ILR transformed input data.
-    """
-    Eeta = q.mean
-    S = q.covariance_matrix
-    Sinv = q.precision_matrix
-    xtSinvx = x.t() @ Sinv @ x
-    d = S.shape[-1]
-    xSE = x.t() @ Sinv @ Eeta
-
-    sigma = psi.T @ torch.diag(1 / P) @ psi
-    tr_S = torch.trace(sigma)
-
-    ESE = Eeta.t() @ S @ Eeta
-    logdetS = q.log_det
-    res = -0.5 * (xtSinvx - 2 * xSE  + tr_S + ESE) - \
-          (d / 2) * (torch.log(2 * torch.pi) - logdetS)
-    return res

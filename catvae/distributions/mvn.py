@@ -12,6 +12,9 @@ import numpy as np
 import functools
 
 
+torch.pi = torch.Tensor([torch.acos(torch.zeros(1)).item() * 2])
+
+
 class MultivariateNormalFactor(Distribution):
 
     def __init__(self, mu, U, diag, n, validate_args=None):
@@ -217,4 +220,6 @@ class MultivariateNormalFactorSum(Distribution):
         return p
 
     def entropy(self):
-        raise NotImplementedError('`entropy` is not implemented.')
+        d = self.mu.shape[-1]
+        half_logdet = self.log_det / 2
+        return half_logdet + (d / 2) * (torch.log(2 * torch.pi) + 1)
