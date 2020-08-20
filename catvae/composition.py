@@ -4,16 +4,17 @@ import torch
 
 def closure(x):
     denom = torch.sum(x, dim=-1)
-    if x.shape == 3:
-        b, n, d = x
+
+    if len(x.size()) == 3:
+        b, n, d = x.size()
         denom = denom.reshape(b, n, 1)
         return x / denom
-    elif x.shape == 2:
-        n, d = x
+    elif len(x.size()) == 2:
+        n, d = x.size()
         denom = denom.reshape(n, 1)
         return x / denom
-    elif x.shape == 1:
-        d = x
+    elif len(x.size()) == 1:
+        d = x.size()
         return x / denom
     else:
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')

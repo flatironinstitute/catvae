@@ -44,7 +44,7 @@ class LinearCatVAE(nn.Module):
         else:
             self.bn = None
 
-        self.encoder = nn.Linear(input_dim, hidden_dim, bias=False)
+        self.encoder = nn.Linear(input_dim - 1, hidden_dim, bias=False)
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
         self.gamma = nn.Parameter(torch.zeros(hidden_dim))
 
@@ -76,7 +76,7 @@ class LinearCatVAE(nn.Module):
 
             self.decoder = nn.Sequential(*layers)
         else:
-            self.decoder = nn.Linear(hidden_dim, input_dim, bias=False)
+            self.decoder = nn.Linear(hidden_dim, input_dim - 1, bias=False)
 
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.encoder.weight.data.normal_(0.0, init_scale)
@@ -123,8 +123,9 @@ class LinearCatVAE(nn.Module):
         p = closure(x)
         D = torch.exp(self.variational_logvars)
         W = self.decoder.weight
+        print(W.shape, self.Psi.shape, p.shape, D.shape)
         qeta = MultivariateNormalFactorSum(
-            eta, self.psi, 1 / p,
+            eta, self.Psi, 1 / p,
             W, D, n)
         qz = MultivariateNormal(
             z, scale_tril=torch.diag(torch.sqrt(D)))
@@ -173,9 +174,13 @@ class LinearCatVAE(nn.Module):
 
     def get_reconstruction_loss(self, x):
         if self.use_analytic_elbo:
-            return - self.analytic_exp_recon_loss(x)
+            hx = ilr(x, self.Psi)
+            z_mean = self.encoder(hx)
+            eta = self.decoder(z_mean)
+            return - self.multinomial_loglike(x, eta)
         else:
-            z_mean = self.encoder(x)
+            hx = ilr(x, self.Psi)
+            z_mean = self.encoder(hx)
             eps = torch.normal(torch.zeros_like(z_mean), 1.0)
 
             z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
