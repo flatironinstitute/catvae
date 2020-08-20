@@ -43,7 +43,7 @@ def expectation_mvn_factor_sum_multinomial(
 
 def expectation_joint_mvn_factor_mvn_factor_sum(
         qeta : MultivariateNormalFactorSum,
-        qz : MultivariateNormal, s2 : torch.Tensor):
+        qz : MultivariateNormal, std : torch.Tensor):
     """ Part of the second expectation KL(q||p)
 
     Parameters
@@ -52,7 +52,7 @@ def expectation_joint_mvn_factor_mvn_factor_sum(
        q(\eta | x) = N(W V(h(x)), WDW^T + \frac{1}{n} \Psi^T diag(x)^{-1} \Psi)
     q2 : MultivariateNormal
        q(z | x) = N(V(h(x)), WDW^T)
-    s2 : torch.Tensor
+    std : torch.Tensor
        Standard deviation of p(\eta | z)
     """
     W = qeta.U2
@@ -60,10 +60,9 @@ def expectation_joint_mvn_factor_mvn_factor_sum(
     sigma = qeta.covariance_matrix
     tr_wdw = torch.trace(W @ qz.covariance_matrix @ W.t())
     tr_S = torch.trace(sigma)
-
+    s2 = std ** 2
     norm_s2 = (-1 / (2 * s2))
     half_logdet = - (d / 2) * (torch.log(2 * torch.pi) + torch.log(s2))
-    # print(tr_wdw, tr_S, half_logdet, norm_s2)
     res = norm_s2 * (tr_wdw + tr_S) + half_logdet
     return res
 

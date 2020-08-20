@@ -5,6 +5,7 @@ import torch
 import torch.testing as tt
 from gneiss.balances import _balance_basis
 from gneiss.cluster import random_linkage
+import numpy as np
 import math
 
 
@@ -114,6 +115,11 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
             self.W, self.D, self.n)
         samples = dist.rsample([10000])
         self.assertAlmostEqual(float(samples.mean()), 1, places=1)
+
+        # add test for covariance matrix
+        exp = torch.Tensor(np.cov(samples.t()))
+        tt.assert_allclose(exp, dist.covariance_matrix,
+                           atol=0.5, rtol=0.1)
 
     def test_log_prob(self):
         loc = torch.ones(self.d - 1)

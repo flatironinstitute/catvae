@@ -217,5 +217,4 @@ class MultivariateNormalFactorSum(Distribution):
         return p
 
     def entropy(self):
-
         raise NotImplementedError('`entropy` is not implemented.')
