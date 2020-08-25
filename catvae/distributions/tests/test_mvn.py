@@ -100,7 +100,7 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
         loc = torch.zeros(d-1)
         dist = MultivariateNormalFactorSum(loc, psi, 1 / p, W, D, n)
         cov = dist.covariance_matrix
-        self.assertEqual(cov.shape, (self.d - 1, self.d - 1))
+        self.assertEqual(cov.shape, (n, d - 1, d - 1))
 
     def test_precision_matrix(self):
         # tests how accurately the inverse covariance matrix can be computed

@@ -157,13 +157,33 @@ class MultivariateNormalFactorSum(Distribution):
 
     @property
     def covariance_matrix(self):
-        sigmaU1 = (1 / self.n) * self.U1 @ torch.diag(self.S1) @ self.U1.t()
+        if len(self.S1.shape) == 1:
+            P = torch.diag(self.S1)
+        elif len(self.S1.shape) == 2:
+            P = torch.stack([
+                torch.diag(self.S1[i, :].squeeze())
+                for i in range(self.S1.shape[0])
+            ], dim=0)
+        else:
+            raise ValueError(f'Cannot handle dimensions {self.S1.shape}')
+
+        sigmaU1 = (1 / self.n) * self.U1 @ P @ self.U1.t()
         sigmaU2 = self.U2 @ torch.diag(self.S2) @ self.U2.t()
         return sigmaU1 + sigmaU2
 
     @property
     def precision_matrix(self):
-        invS1 = self.n * self.U1 @ torch.diag(1 / self.S1) @ self.U1.t()
+        if len(self.S1.shape) == 1:
+            invP = torch.diag(1 / self.S1)
+        elif len(self.S1.shape) == 2:
+            invP = torch.stack([
+                torch.diag(1 / self.S1[i, :].squeeze())
+                for i in range(self.S1.shape[0])
+            ], dim=0)
+        else:
+            raise ValueError(f'Cannot handle dimensions {self.S1.shape}')
+
+        invS1 = self.n * self.U1 @ inv @ self.U1.t()
         W = self.U2
         invD = torch.diag(1 / self.S2)
 

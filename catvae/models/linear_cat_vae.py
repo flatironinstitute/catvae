@@ -4,7 +4,7 @@ from gneiss.cluster import random_linkage
 from gneiss.balances import _balance_basis
 from catvae.composition import closure, ilr
 from catvae.distributions.likelihood import (
-    expectation_mvn_factor_sum_multinomial,
+    expectation_mvn_factor_sum_multinomial_bound,
     expectation_joint_mvn_factor_mvn_factor_sum,
 )
 import numpy as np
@@ -105,9 +105,8 @@ class LinearCatVAE(nn.Module):
         qdist = MultivariateNormalFactorSum(
             eta, self.psi, 1 / p,
             W, D, n)
-        return expectation_mvn_factor_sum_multinomial(
-            qdist, self.psi, x, self.gamma
-        )
+        return expectation_mvn_factor_sum_multinomial_bound(
+            qdist, self.psi, x)
 
     def multinomial_kl(self, x, eta, z):
         """ KL divergence between asymptotic multinomial and decoding normal

@@ -1,5 +1,5 @@
 import torch
-from torch.distributions import MultivariateNormal
+from torch.distributions import MultivariateNormal, Multinomial
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 
 
@@ -12,7 +12,7 @@ def K(x):
             torch.sum(torch.lgamma(1 + x), dim=-1))
 
 
-def expectation_mvn_factor_sum_multinomial(
+def expectation_mvn_factor_sum_multinomial_taylor(
         q: MultivariateNormalFactorSum, psi: torch.Tensor, x: torch.Tensor,
         gamma: torch.Tensor):
     r""" Lower bound for th efirst expectation involving
@@ -40,6 +40,34 @@ def expectation_mvn_factor_sum_multinomial(
     exp_ln = torch.exp(psi @ mu_eta + 0.5 * cov_eta)
     # approximation for normalization factor
     denom = (1 / gamma) * exp_ln.sum(axis=-1) + torch.log(gamma) - 1
+    return K(x) + x @ (logits - denom)
+
+
+def expectation_mvn_factor_sum_multinomial_bound(
+        q: MultivariateNormalFactorSum, psi: torch.Tensor, x: torch.Tensor):
+    r""" Lower bound for th efirst expectation involving
+         multinomial reconstruction error
+
+    Parameters
+    ----------
+    q : MultivariateNormalFactorSum
+       q(eta | x) = N(W V(h(x)), WDW^T + \frac{1}{nf} Psi^T diag(x)^{-1} Psi)
+    psi : torch.Tensor
+       ILR basis of dimension D x (D - 1)
+    x : torch.Tensor
+       Input counts of dimension N x D
+    gamma : torch.Tensor
+       Auxiliary variational parameter to be jointly optimized.
+
+    Notes
+    -----
+    We can't get closed-form updates here, so we need to obtain another
+    lower bound for this expectation.  See Silva et al 2017 for more details.
+    """
+
+    mu_eta = q.mean
+    logits = psi @ mu_eta
+    denom = torch.logexpsum(logits, sum=-1)
     return K(x) + x @ (logits - denom)
 
 
