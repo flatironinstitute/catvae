@@ -179,15 +179,17 @@ class MultivariateNormalFactorSum(Distribution):
     def precision_matrix(self):
         if len(self.S1.shape) == 1:
             invP = torch.diag(1 / self.S1)
+            n = (1 / self.n)
         elif len(self.S1.shape) == 2:
             invP = torch.stack([
                 torch.diag(1 / self.S1[i, :].squeeze())
                 for i in range(self.S1.shape[0])
             ], dim=0)
+            n = (1 / self.n).unsqueeze(1).unsqueeze(1)
         else:
             raise ValueError(f'Cannot handle dimensions {self.S1.shape}')
 
-        invS1 = self.n * self.U1 @ inv @ self.U1.t()
+        invS1 = n * self.U1 @ inv @ self.U1.t()
         W = self.U2
         invD = torch.diag(1 / self.S2)
 
@@ -198,12 +200,24 @@ class MultivariateNormalFactorSum(Distribution):
 
     @property
     def log_det(self):
+        if len(self.S1.shape) == 1:
+            invP = torch.diag(1 / self.S1)
+            n = (1 / self.n)
+        elif len(self.S1.shape) == 2:
+            invP = torch.stack([
+                torch.diag(1 / self.S1[i, :].squeeze())
+                for i in range(self.S1.shape[0])
+            ], dim=0)
+            n = (1 / self.n).unsqueeze(1).unsqueeze(1)
+        else:
+            raise ValueError(f'Cannot handle dimensions {self.S1.shape}')
+
         # Matrix determinant lemma, similar to the Woodbury identity
-        invS1 = self.n * self.U1 @ torch.diag(1 / self.S1) @ self.U1.t()
+        invS1 = n * self.U1 @ invP @ self.U1.t()
         W = self.U2
         d = self.U1.shape[-1]
         invD = torch.diag(1 / self.S2)
-        logdet_A = torch.sum(torch.log(self.S1)) + d * np.log(1 / self.n)
+        logdet_A = torch.sum(torch.log(self.S1)) + d * torch.log(1 / self.n)
         logdet_C = torch.log(torch.det(invD + W.t() @ invS1 @ W))
         logdet_D = torch.sum(torch.log(self.S2))
         return logdet_A + logdet_C + logdet_D

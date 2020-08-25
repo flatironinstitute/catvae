@@ -136,14 +136,16 @@ class LightningVAE(pl.LightningModule):
         losses = list(map(loss_f, outputs))
         loss = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_loss', loss, self.global_step)
-        loss_f = lambda x: x['log']['pred_kl']
-        losses = list(map(loss_f, outputs))
-        kl_diff = sum(losses) / len(losses)
-        self.logger.experiment.add_scalar('pred_kl', kl_diff, self.global_step)
+        # loss_f = lambda x: x['log']['pred_kl']
+        # losses = list(map(loss_f, outputs))
+        # kl_diff = sum(losses) / len(losses)
+        # self.logger.experiment.add_scalar('pred_kl', kl_diff, self.global_step)
         mt = metric_transpose_theorem(self.model)
         self.logger.experiment.add_scalar('transpose', mt, self.global_step)
         tensorboard_logs = dict(
-            [('val_loss', loss), ('pred_kl', kl_diff), ('transpose', mt)]
+            [('val_loss', loss),
+             # ('pred_kl', kl_diff),
+             ('transpose', mt)]
         )
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):

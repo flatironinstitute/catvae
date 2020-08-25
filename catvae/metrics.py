@@ -37,10 +37,10 @@ def metric_transpose_theorem(model):
     """
     # encoder_weight = get_weight_tensor_from_seq(model.encoder)
     # decoder_weight = get_weight_tensor_from_seq(model.decoder)
-    encoder_weight = model.get_loadings(decoder=False)
-    decoder_weight = model.get_loadings(decoder=True)
+    encoder_weight = model.encoder.weight.cpu().numpy()
+    decoder_weight = model.decoder.weight.cpu().numpy()
     transpose_metric = np.linalg.norm(encoder_weight - decoder_weight.T) ** 2
-    return transpose_metric.item() / float(model.n_latent)
+    return transpose_metric.item() / float(model.hidden_dim)
 
 
 def metric_alignment(model, gt_eigvectors):
@@ -51,7 +51,7 @@ def metric_alignment(model, gt_eigvectors):
     :return: sum_i (1 - max_j (cos(eigvector_i, normalized_decoder column_j)))
     """
     #decoder_weight = get_weight_tensor_from_seq(model.decoder)
-    decoder_np = model.get_loadings(decoder=True)
+    decoder_np = model.decoder.weight.cpu().numpy()
 
     # normalize columns of gt_eigvectors
     norm_gt_eigvectors = gt_eigvectors / np.linalg.norm(gt_eigvectors, axis=0)
@@ -63,13 +63,14 @@ def metric_alignment(model, gt_eigvectors):
         eigvector = norm_gt_eigvectors[:, eig_i]
         total_angles += 1. - np.max(np.abs(norm_decoder.T @ eigvector)) ** 2
 
-    return total_angles / float(model.n_latent)
+    return total_angles / float(model.hidden_dim)
 
 
 def metric_subspace(model, gt_eigvectors, gt_eigs):
     #decoder_weight = get_weight_tensor_from_seq(model.decoder)
-    decoder_np = model.get_loadings(decoder=True)
+    # decoder_np = model.get_loadings(decoder=True)
+    decoder_np = model.decoder.weight.cpu().numpy()
 
     # k - tr(UU^T WW^T), where W is left singular vector matrix of decoder
     u, s, vh = np.linalg.svd(decoder_np, full_matrices=False)
-    return 1 - np.trace(gt_eigvectors @ gt_eigvectors.T @ u @ u.T) / float(model.n_latent)
+    return 1 - np.trace(gt_eigvectors @ gt_eigvectors.T @ u @ u.T) / float(model.hidden_dim)

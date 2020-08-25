@@ -99,14 +99,13 @@ class LinearCatVAE(nn.Module):
         """
         W = self.decoder.weight
         n = x.sum(axis=-1)
-        p = closure(x)
+        p = closure(self.imputer(x))
         D = torch.exp(self.variational_logvars)
-
         qdist = MultivariateNormalFactorSum(
-            eta, self.psi, 1 / p,
+            eta, self.Psi, 1 / p,
             W, D, n)
         return expectation_mvn_factor_sum_multinomial_bound(
-            qdist, self.psi, x)
+            qdist, self.Psi, x)
 
     def multinomial_kl(self, x, eta, z):
         """ KL divergence between asymptotic multinomial and decoding normal
@@ -119,15 +118,15 @@ class LinearCatVAE(nn.Module):
             The expected value or q(z|x)
         """
         n = x.sum(axis=-1)
-        p = closure(x)
-        D = torch.exp(self.variational_logvars)
+        p = closure(self.imputer(x))
+        D = torch.exp(0.5 * self.variational_logvars)
         W = self.decoder.weight
+
         #print(W.shape, self.Psi.shape, p.shape, D.shape)
         qeta = MultivariateNormalFactorSum(
             eta, self.Psi, 1 / p,
             W, D, n)
-        qz = MultivariateNormal(
-            z, scale_tril=torch.diag(torch.sqrt(D)))
+        qz = MultivariateNormal(z, scale_tril=torch.diag(D))
 
         std = torch.exp(0.5 * self.log_sigma_sq)
         expp = expectation_joint_mvn_factor_mvn_factor_sum(
@@ -147,12 +146,12 @@ class LinearCatVAE(nn.Module):
         """Computes the analytic ELBO for a categorical VAE."""
         z_logvar = self.variational_logvars
         exp_gauss = (-self.gaussian_kl(z_mean, z_logvar)).mean(0).sum()
-        exp_mult = self.multinomial_kl(x, eta, z_mean)
-        exp_recon_loss = self.multinomial_loglike(x, eta)
+        exp_mult = self.multinomial_kl(x, eta, z_mean).mean()
+        exp_recon_loss = self.multinomial_loglike(x, eta).mean()
         return exp_recon_loss + exp_mult + exp_gauss
 
     def forward(self, x):
-        hx = ilr(x, self.Psi)
+        hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)
         if not self.use_analytic_elbo:
             eps = torch.normal(torch.zeros_like(z_mean), self.mc_samples)
@@ -173,12 +172,12 @@ class LinearCatVAE(nn.Module):
 
     def get_reconstruction_loss(self, x):
         if self.use_analytic_elbo:
-            hx = ilr(x, self.Psi)
+            hx = ilr(elf.imputer(x), self.Psi)
             z_mean = self.encoder(hx)
             eta = self.decoder(z_mean)
             return - self.multinomial_loglike(x, eta)
         else:
-            hx = ilr(x, self.Psi)
+            hx = ilr(self.imputer(x), self.Psi)
             z_mean = self.encoder(hx)
             eps = torch.normal(torch.zeros_like(z_mean), 1.0)
 
