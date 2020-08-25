@@ -1,5 +1,5 @@
 from catvae.distributions.likelihood import (
-    expectation_mvn_factor_sum_multinomial,
+    expectation_mvn_factor_sum_multinomial_bound,
     expectation_joint_mvn_factor_mvn_factor_sum
 )
 import torch
@@ -47,10 +47,10 @@ class TestExpectations(unittest.TestCase):
         lp = p.log_prob(x)
         exp = lp.mean()
         gam = torch.Tensor([1.])
-        res = expectation_mvn_factor_sum_multinomial(
-            q, self.psi.t(), x, gam)
+        res = expectation_mvn_factor_sum_multinomial_bound(
+            q, self.psi.t(), x)
         self.assertFalse(np.isinf(float(res)))
-        self.assertGreater(float(exp), float(res))
+        self.assertLess(float(exp), float(res))
 
     def test_expectation_joint_mvn_factor_mvn_factor_sum(self):
         seed_all(2)

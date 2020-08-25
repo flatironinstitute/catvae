@@ -67,7 +67,7 @@ def expectation_mvn_factor_sum_multinomial_bound(
 
     mu_eta = q.mean
     logits = psi @ mu_eta
-    denom = torch.logexpsum(logits, sum=-1)
+    denom = torch.logsumexp(logits, dim=-1)
     return K(x) + x @ (logits - denom)
 
 
@@ -85,9 +85,11 @@ def expectation_joint_mvn_factor_mvn_factor_sum(
     std : torch.Tensor
        Standard deviation of p(eta | z)
     """
-    W = qeta.U2
+    W = qeta.U2.data
     d = W.shape[-2] + 1
     sigma = qeta.covariance_matrix
+    print(type(W), type(qz.covariance_matrix))
+    print(W.shape, qz.covariance_matrix.shape)
     tr_wdw = torch.trace(W @ qz.covariance_matrix @ W.t())
     tr_S = torch.trace(sigma)
     s2 = std ** 2
