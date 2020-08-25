@@ -33,6 +33,8 @@ class MultivariateNormalFactor(Distribution):
         Notes
         -----
         Can incorporate the number of samples in the diagonal
+
+        Important : this cannot handle batching
         """
         arg_constraints = {'mu': torch_constraints.real_vector,
                            'U': constraints.left_orthonormal,
@@ -159,15 +161,17 @@ class MultivariateNormalFactorSum(Distribution):
     def covariance_matrix(self):
         if len(self.S1.shape) == 1:
             P = torch.diag(self.S1)
+            invN = (1 / self.n)
         elif len(self.S1.shape) == 2:
             P = torch.stack([
                 torch.diag(self.S1[i, :].squeeze())
                 for i in range(self.S1.shape[0])
             ], dim=0)
+            invN = (1 / self.n).unsqueeze(1).unsqueeze(1)
         else:
             raise ValueError(f'Cannot handle dimensions {self.S1.shape}')
 
-        sigmaU1 = (1 / self.n) * self.U1 @ P @ self.U1.t()
+        sigmaU1 = invN * (self.U1 @ P @ self.U1.t())
         sigmaU2 = self.U2 @ torch.diag(self.S2) @ self.U2.t()
         return sigmaU1 + sigmaU2
 

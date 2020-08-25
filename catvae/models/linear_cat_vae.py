@@ -122,7 +122,7 @@ class LinearCatVAE(nn.Module):
         p = closure(x)
         D = torch.exp(self.variational_logvars)
         W = self.decoder.weight
-        print(W.shape, self.Psi.shape, p.shape, D.shape)
+        #print(W.shape, self.Psi.shape, p.shape, D.shape)
         qeta = MultivariateNormalFactorSum(
             eta, self.Psi, 1 / p,
             W, D, n)

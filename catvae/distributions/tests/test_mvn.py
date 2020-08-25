@@ -98,7 +98,8 @@ class TestMultivariateNormalFactorSum(unittest.TestCase):
         p = torch.rand(n, d)
         D = torch.rand(k)
         loc = torch.zeros(d-1)
-        dist = MultivariateNormalFactorSum(loc, psi, 1 / p, W, D, n)
+        depth = torch.Tensor([100] * n)
+        dist = MultivariateNormalFactorSum(loc, psi, 1 / p, W, D, depth)
         cov = dist.covariance_matrix
         self.assertEqual(cov.shape, (n, d - 1, d - 1))
 
