@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch.distributions import MultivariateNormal, Multinomial, Normal
 from catvae.distributions.mvn import MultivariateNormalFactorSum
 
@@ -36,17 +37,22 @@ def expectation_mvn_factor_sum_multinomial_taylor(
     lower bound for this expectation.  See Blei and Lafferty et al.
     """
     mu_eta = q.mean
-    cov_eta = torch.diagonal(psi @ q.covariance_matrix @ psi.t())
-    logits = psi @ mu_eta
-    exp_ln = torch.exp(psi @ mu_eta + 0.5 * cov_eta)
+    cov = q.covariance_matrix
+    cov_eta = torch.stack([torch.diagonal(psi.t() @ cov[i] @ psi)
+                           for i in range(cov.shape[0])])
+    logits = mu_eta @ psi
+    exp_ln = torch.exp(logits + cov_eta)
     # approximation for normalization factor
+    gamma = F.softplus(gamma).repeat(exp_ln.shape[0])
     denom = (1 / gamma) * exp_ln.sum(axis=-1) + torch.log(gamma) - 1
-    return K(x) + x @ (logits - denom)
+    denom = denom.unsqueeze(1)
+    logits = logits - denom
+    return K(x) + (x * logits).sum(dim=-1)
 
 
 def expectation_mvn_factor_sum_multinomial_bound(
         q: MultivariateNormalFactorSum, psi: torch.Tensor, x: torch.Tensor):
-    r""" Lower bound for th efirst expectation involving
+    r""" Lower bound for the first expectation involving
          multinomial reconstruction error
 
     Parameters
@@ -63,13 +69,23 @@ def expectation_mvn_factor_sum_multinomial_bound(
     Notes
     -----
     We can't get closed-form updates here, so we need to obtain another
-    lower bound for this expectation.  See Silva et al 2017 for more details.
+    approximation for this expectation.  We will use the fact that
+    I - 1dd converges to the identity matrix with increasing d.
     """
-
     mu_eta = q.mean
+    device = mu_eta
     logits = mu_eta @ psi
+    # Approach 1 : Silva et al 2017
     denom = torch.logsumexp(logits, dim=-1)
-    return K(x) + (x * (logits - denom.reshape(-1, 1))).sum(-1)
+    exp_logits = logits - denom
+
+    # Approach 2:
+    # d = mu_eta.shape[-1] + 1
+    # Id = torch.eye(d).to(device)
+    # dd = (1 / d) * torch.ones((d, d)).to(device)
+    # A = Id - dd
+    # exp_logits = A @ logits
+    return K(x) + (x * exp_logits).sum(-1)
 
 def mean_trace(X):
     return sum(torch.trace(X[i]) for i in range(X.shape[0])) / X.shape[0]
