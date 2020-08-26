@@ -58,12 +58,12 @@ class LinearCatVAE(nn.Module):
         mu = self.decoder(z_mean)
         W = self.decoder.weight
         # penalties
-        D = torch.exp(0.5 * self.variational_logvars)
+        D = torch.exp(self.variational_logvars)
         var = torch.exp(self.log_sigma_sq)
         d = W.shape[-1] + 1
-        sI = var * self.Id
         # TODO replace this with a factor MVN distribution later
         wdw = W @ torch.diag(D) @ W.t()
+        sI = var * self.Id
         sigma = sI + wdw
         qdist = MultivariateNormal(mu, covariance_matrix=sigma)
         prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
