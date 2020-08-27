@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from gneiss.cluster import random_linkage
-from gneiss.balances import _balance_basis
+from gneiss.balances import sparse_balance_basis
+from scipy.sparse import coo_matrix
 from catvae.composition import closure, ilr
 from catvae.distributions.likelihood import (
     expectation_mvn_factor_sum_multinomial_taylor,
@@ -10,27 +11,31 @@ from catvae.distributions.likelihood import (
 )
 import numpy as np
 from torch.distributions import Multinomial, MultivariateNormal, Normal
-from catvae.distributions.mvn import MultivariateNormalFactorSum
-
+from catvae.distributions.mvn import MultivariateNormalFactorIdentity
+from typing import Callable
 
 LOG_2_PI = np.log(2.0 * np.pi)
 
 
 class LinearCatVAE(nn.Module):
 
-    def __init__(self, input_dim, hidden_dim, init_scale=0.001,
-                 basis=None,  imputer=None,
-                 batch_size=10):
+    def __init__(self, input_dim : int, hidden_dim : int,
+                 init_scale : float = 0.001,
+                 basis : coo_matrix = None,
+                 imputer : Callable[[torch.Tensor], torch.Tensor]=None,
+                 batch_size : int =10):
         super(LinearCatVAE, self).__init__()
-
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         # Psi must be dimension D - 1 x D
         if basis is None:
             tree = random_linkage(self.input_dim)
-            Psi = torch.Tensor(_balance_basis(tree)[0].copy())
-        else:
-            Psi = torch.Tensor(basis.copy())
+            basis = sparse_balance_basis(tree)[0].copy()
+        indices = np.vstack((basis.row, basis.col))
+        Psi = torch.sparse_coo_tensor(
+            indices.copy(), basis.data.astype(np.float32).copy(),
+            requires_grad=False)
+        # Psi.requires_grad = False
 
         if imputer is None:
             self.imputer = lambda x: x + 1
@@ -43,7 +48,7 @@ class LinearCatVAE(nn.Module):
         self.encoder.weight.data.normal_(0.0, init_scale)
         self.decoder.weight.data.normal_(0.0, init_scale)
 
-        Id = torch.eye(input_dim - 1).to(self.eta.device)
+        Id = torch.eye(input_dim - 1).to(self.eta.device).to_sparse()
         zI = torch.ones(self.hidden_dim).to(self.eta.device)
         zm = torch.zeros(self.hidden_dim).to(self.eta.device)
 
@@ -62,13 +67,15 @@ class LinearCatVAE(nn.Module):
         var = torch.exp(self.log_sigma_sq)
         d = W.shape[-1] + 1
         # TODO replace this with a factor MVN distribution later
-        wdw = W @ torch.diag(D) @ W.t()
-        sI = var * self.Id
-        sigma = sI + wdw
-        qdist = MultivariateNormal(mu, covariance_matrix=sigma)
+        #wdw = W @ torch.diag(D) @ W.t()
+        #sI = var * self.Id
+        #sigma = sI + wdw
+        #qdist = MultivariateNormal(mu, covariance_matrix=sigma)
+        qdist = MultivariateNormalFactorIdentity(mu, var, D, W)
         prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
         logit_loss = qdist.log_prob(self.eta).mean()
-        mult_loss = Multinomial(logits=self.eta @ self.Psi).log_prob(x).mean()
+        mult_loss = Multinomial(
+            logits=(self.Psi.t() @ self.eta.t()).t()).log_prob(x).mean()
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
@@ -76,5 +83,6 @@ class LinearCatVAE(nn.Module):
         hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)
         eta = self.decoder(z_mean)
-        mult_loss = Multinomial(logits=eta @ self.Psi).log_prob(x).mean()
+        mult_loss = Multinomial(
+            logits=(self.Psi.t() @ self.eta.t()).t()).log_prob(x).mean()
         return - mult_loss

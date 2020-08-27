@@ -15,7 +15,7 @@ from catvae.metrics import (
 import pytorch_lightning as pl
 from skbio import TreeNode
 from skbio.stats.composition import alr_inv, closure
-from gneiss.balances import _balance_basis
+from gneiss.balances import sparse_balance_basis
 
 from biom import load_table
 from scipy.stats import entropy
@@ -29,7 +29,7 @@ class LightningCountVAE(pl.LightningModule):
         self.hparams = args
         if self.hparams.basis_file is not None:
             tree = TreeNode.read(self.hparams.basis_file)
-            basis, nodes = _balance_basis(tree)
+            basis, nodes = sparse_balance_basis(tree)
         else:
             basis = None
 
@@ -143,8 +143,7 @@ class LightningCountVAE(pl.LightningModule):
              ('val_rec_err', rec_err),
              ('transpose', mt),
              ('orthogonality', ortho),
-             ('eigenvalue-error', eig_err)
-            ]
+             ('eigenvalue-error', eig_err)]
         )
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):

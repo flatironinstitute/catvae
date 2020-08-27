@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch.sparse import mm
 
 
 def closure(x):
@@ -20,7 +21,7 @@ def closure(x):
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
 
 def ilr(p, basis):
-    return torch.log(p) @ basis.T
+    return mm(basis, torch.log(p).T).T
 
 
 def ilr_inv(eta, basis):

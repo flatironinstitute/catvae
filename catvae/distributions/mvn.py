@@ -7,6 +7,8 @@ from torch.distributions.distribution import Distribution
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.distributions.multivariate_normal import _batch_mv
 from torch.distributions.utils import _standard_normal
+# from torch.sparse import mm
+from torch import mm
 import numpy as np
 import functools
 
@@ -23,6 +25,14 @@ def _batch_mahalanobis_factor(L_inv, x):
     xLxt = (xL * x).sum(-1)
     return xLxt
 
+
+def sparse_identity(d):
+    # i = torch.arange(d)
+    # idx = torch.stack((i, i))
+    # v = torch.ones(d)
+    # Id = torch.sparse_coo_tensor(idx, v, requires_grad=False)
+    Id = torch.eye(d)
+    return Id
 
 class MultivariateNormalFactor(Distribution):
 
@@ -290,6 +300,7 @@ class MultivariateNormalFactorIdentity(Distribution):
         self.D = D
         self.W = W
         self.d = d
+        self.Id = sparse_identity(self.d).to(self.mu.device)
         batch_shape, event_shape = self.mu.shape[:-1], self.mu.shape[-1:]
         super(MultivariateNormalFactorIdentity, self).__init__(
             batch_shape, event_shape, validate_args=validate_args)
@@ -297,8 +308,8 @@ class MultivariateNormalFactorIdentity(Distribution):
     @property
     def covariance_matrix(self):
         wdw = self.W @ torch.diag(self.D) @ self.W.t()
-        Id = torch.eye(self.d).to(self.mu.device)
-        s2 = self.sigma2 * Id
+        #Id = torch.eye(self.d).to(self.mu.device)
+        s2 = self.Id * self.sigma2
         return wdw + s2
 
     @property
@@ -306,26 +317,30 @@ class MultivariateNormalFactorIdentity(Distribution):
         # Woodbury identity
         # inv(A + WDWt) = invA - invA @ W inv(invD + Wt invA W) Wt invA
         W, D = self.W, self.D
-        Id = torch.eye(self.d).to(self.mu.device)
-        invA = (1 / self.sigma2) * Id
+        #Id = torch.eye(self.d).to(self.mu.device)
+        invA = self.Id * (1 / self.sigma2)
         invD = torch.diag(1 / D)
-        C = invD + W.t() @ invA @ W
+        invAW = mm(invA, W)
+        C = invD + W.t() @ invAW
         invC = torch.inverse(C)
-        cor = (invA @ W @ invC @ W.t() @ invA)
-        return invA - cor
+        cor = invAW @ invC @ invAW.t()
+        res = (-cor) + invA
+        return res
 
     @property
     def log_det(self):
         # Matrix determinant lemma
         # det(A + WDWt) = det(invD + Wt invA W) det(D) det (A)
         W, D = self.W, self.D
-        Id = torch.eye(self.d).to(self.mu.device)
-        invA = (1 / self.sigma2) * Id
+        #Id = torch.eye(self.d).to(self.mu.device)
+        invA = self.Id * (1 / self.sigma2)
         invD = torch.diag(1 / self.D)
+        invAW = mm(invA, W)
         logdet_A = torch.log(self.sigma2) * self.d
-        logdet_C = torch.log(torch.det(invD + W.t() @ invA @ W))
+        logdet_C = torch.slogdet(invD + W.t() @ invAW)[1]
         logdet_D = torch.sum(torch.log(self.D))
-        return logdet_A + logdet_C + logdet_D
+        res = logdet_A + logdet_C + logdet_D
+        return res
 
     @property
     def mean(self):
