@@ -114,15 +114,6 @@ class LightningVAE(pl.LightningModule):
         loss = self.model(counts)
         assert torch.isnan(loss).item() is False
 
-        # Record the actual loss.
-        # res = self.model.inference(smoothed_counts)
-        # pred_probs = closure(alr_inv(res['px_mean'].cpu().detach().numpy()))
-        # kl_diffs = []
-        # cnts = closure(counts.cpu().detach().numpy())
-        # for i in range(counts.shape[0]):
-        #     e = entropy(cnts[i], pred_probs[i])
-        #     kl_diffs.append(e)
-        # kl_diff = np.mean(kl_diffs)
         tensorboard_logs = {'validation_loss': loss}
 
         # log the learning rate
@@ -136,10 +127,6 @@ class LightningVAE(pl.LightningModule):
         losses = list(map(loss_f, outputs))
         loss = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_loss', loss, self.global_step)
-        # loss_f = lambda x: x['log']['pred_kl']
-        # losses = list(map(loss_f, outputs))
-        # kl_diff = sum(losses) / len(losses)
-        # self.logger.experiment.add_scalar('pred_kl', kl_diff, self.global_step)
         mt = metric_transpose_theorem(self.model)
         self.logger.experiment.add_scalar('transpose', mt, self.global_step)
         tensorboard_logs = dict(
