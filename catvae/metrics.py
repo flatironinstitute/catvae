@@ -48,8 +48,11 @@ def metric_orthogonality(model):
     u, s, v = np.linalg.svd(W)
     eigvals = (W**2).sum(axis=0)
     Weig = W / np.sqrt(eigvals)
-    I = Weig.shape[1]
-    return np.linalg.norm(Weig.T @ Weig - I), np.sqrt(np.sum((s - eigvals)**2))
+    I = np.eye(Weig.shape[1])
+    eigvals = np.sqrt(np.sort(eigvals)[::-1])
+    ortho_err = np.linalg.norm(Weig.T @ Weig - I)
+    eig_err = np.sqrt(np.sum((s - eigvals)**2))
+    return ortho_err, eig_err
 
 def metric_alignment(model, gt_eigvectors):
     """
