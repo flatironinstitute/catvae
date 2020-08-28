@@ -57,9 +57,9 @@ class LinearCatVAE(nn.Module):
         var = torch.exp(self.log_sigma_sq)
         qdist = MultivariateNormalFactorIdentity(mu, var, D, W)
         logp = self.Psi.t() @ self.eta.t()
-        prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean(0).sum()
-        logit_loss = qdist.log_prob(self.eta).mean(0).sum()
-        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean(0).sum()
+        prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
+        logit_loss = qdist.log_prob(self.eta).mean()
+        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
@@ -68,5 +68,5 @@ class LinearCatVAE(nn.Module):
         z_mean = self.encoder(hx)
         eta = self.decoder(z_mean)
         logp = self.Psi.t() @ eta.t()
-        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean(0).sum()
+        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
         return - mult_loss
