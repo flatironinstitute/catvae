@@ -3,14 +3,9 @@ import torch.nn as nn
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
 from scipy.sparse import coo_matrix
-from catvae.composition import closure, ilr
-from catvae.distributions.likelihood import (
-    expectation_mvn_factor_sum_multinomial_taylor,
-    expectation_mvn_factor_sum_multinomial_bound,
-    expectation_joint_mvn_factor_mvn_factor_sum,
-)
 import numpy as np
 from torch.distributions import Multinomial, MultivariateNormal, Normal
+from catvae.composition import closure, ilr
 from catvae.distributions.mvn import MultivariateNormalFactorIdentity
 from typing import Callable
 
@@ -78,5 +73,5 @@ class LinearCatVAE(nn.Module):
         z_mean = self.encoder(hx)
         eta = self.decoder(z_mean)
         mult_loss = Multinomial(
-            logits=(self.Psi.t() @ self.eta.t()).t()).log_prob(x).mean()
+            logits=(self.Psi.t() @ self.eta.t()).t()).log_prob(x).mean(0).sum()
         return - mult_loss
