@@ -37,7 +37,7 @@ class LinearCatVAE(nn.Module):
         self.encoder = nn.Linear(input_dim - 1, hidden_dim, bias=False)
         self.decoder = nn.Linear(hidden_dim, input_dim - 1, bias=False)
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
-        self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
+        self.log_sigma_sq = nn.Parameter(torch.tensor(0.01))
         self.eta = nn.Parameter(torch.zeros(batch_size, self.input_dim - 1))
         self.encoder.weight.data.normal_(0.0, init_scale)
         self.decoder.weight.data.normal_(0.0, init_scale)
@@ -46,6 +46,7 @@ class LinearCatVAE(nn.Module):
         self.register_buffer('Psi', Psi)
         self.register_buffer('zI', zI)
         self.register_buffer('zm', zm)
+
 
     def forward(self, x):
         hx = ilr(self.imputer(x), self.Psi)

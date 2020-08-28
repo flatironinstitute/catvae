@@ -169,8 +169,15 @@ class LightningCountVAE(pl.LightningModule):
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
         elif self.hparams.scheduler == 'steplr':
-            m = 1e-6  # minimum learning rate
-            steps = int(np.log2(self.hparams.learning_rate / m))
+            m = 1e-1  # maximum learning rate
+            steps = int(np.log2(m / self.hparams.learning_rate))
+            steps = self.hparams.epochs // steps
+            scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
+        elif self.hparams.scheduler == 'inv_steplr':
+            m = 1e-1  # maximum learning rate
+            optimizer = torch.optim.Adam(
+                self.model.parameters(), lr=m)
+            steps = int(np.log2(m / self.hparams.learning_rate))
             steps = self.hparams.epochs // steps
             scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'none':
