@@ -65,17 +65,11 @@ class LinearCatVAE(nn.Module):
         # penalties
         D = torch.exp(self.variational_logvars)
         var = torch.exp(self.log_sigma_sq)
-        d = W.shape[-1] + 1
-        # TODO replace this with a factor MVN distribution later
-        #wdw = W @ torch.diag(D) @ W.t()
-        #sI = var * self.Id
-        #sigma = sI + wdw
-        #qdist = MultivariateNormal(mu, covariance_matrix=sigma)
         qdist = MultivariateNormalFactorIdentity(mu, var, D, W)
-        prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
-        logit_loss = qdist.log_prob(self.eta).mean()
+        prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean(0).sum()
+        logit_loss = qdist.log_prob(self.eta).mean(0).sum()
         mult_loss = Multinomial(
-            logits=(self.Psi.t() @ self.eta.t()).t()).log_prob(x).mean()
+            logits=(self.Psi.t() @ self.eta.t()).t()).log_prob(x).mean(0).sum()
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 

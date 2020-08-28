@@ -167,7 +167,7 @@ class LightningCountVAE(pl.LightningModule):
             self.model.parameters(), lr=self.hparams.learning_rate)
         if self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingWarmRestarts(
-                optimizer, T_0=5, T_mult=2)
+                optimizer, T_0=2, T_mult=2)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-6  # minimum learning rate
             steps = int(np.log2(self.hparams.learning_rate / m))
