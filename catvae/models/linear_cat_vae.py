@@ -65,6 +65,7 @@ class LinearCatVAE(nn.Module):
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
+
     def get_reconstruction_loss(self, x):
         hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)

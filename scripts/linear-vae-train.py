@@ -2,13 +2,13 @@ import os
 import argparse
 import numpy as np
 import torch
-from catvae.trainer import LightningCatVAE
+from catvae.trainer import LightningLinearVAE
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
 def main(args):
-    model = LightningCatVAE(args)
+    model = LightningLinearVAE(args)
     if (args.eigvectors is not None and
         args.eigvalues is not None):
         eigvectors = np.loadtxt(args.eigvectors)
@@ -22,7 +22,7 @@ def main(args):
     ckpt_path = os.path.join(
         args.output_directory,
         trainer.logger.name,
-        f"catvae_version_{trainer.logger.version}",
+        f"linear_vae_version_{trainer.logger.version}",
         "checkpoints",
     )
     checkpoint_callback = ModelCheckpoint(
