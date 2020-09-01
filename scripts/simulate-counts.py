@@ -10,7 +10,6 @@ import os
 def main(args):
     os.mkdir(args.output_dir)
     np.random.seed(args.seed)
-    k = 10
     sims = multinomial_bioms(
         k=args.latent_dim, D=args.input_dim,
         N=args.samples, M=args.depth)

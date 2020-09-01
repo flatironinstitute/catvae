@@ -1,21 +1,42 @@
+import os
 import argparse
 import numpy as np
+import torch
 from catvae.trainer import LightningCatVAE
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
 def main(args):
     model = LightningCatVAE(args)
     if (args.eigvectors is not None and
         args.eigvalues is not None):
-        eigvectors = np.load(args.eigvectors)
-        eigvalues = np.load(args.eigvalues)
+        eigvectors = np.loadtxt(args.eigvectors)
+        eigvalues = np.loadtxt(args.eigvalues)
         model.set_eigs(eigvectors, eigvalues)
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
         check_val_every_n_epoch=1,
     )
+    ckpt_path = os.path.join(
+        args.output_directory,
+        trainer.logger.name,
+        f"version_{trainer.logger.version}",
+        "checkpoints",
+    )
+    checkpoint_callback = ModelCheckpoint(
+        filepath=ckpt_path,
+        period=1,
+        monitor='val_loss',
+        mode='min',
+        verbose=True
+    )
+    trainer.checkpoint_callback = checkpoint_callback
+
     trainer.fit(model)
+    torch.save(model.state_dict(),
+               args.output_directory + '/last_ckpt.pt')
 
 
 if __name__ == '__main__':

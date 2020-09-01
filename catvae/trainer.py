@@ -109,10 +109,6 @@ class LightningVAE(pl.LightningModule):
         pass
 
     def validation_epoch_end(self, outputs):
-        loss_f = lambda x: x['validation_loss']
-        losses = list(map(loss_f, outputs))
-        loss = sum(losses) / len(losses)
-        self.logger.experiment.add_scalar('val_loss', loss, self.global_step)
         loss_f = lambda x: x['log']['val_rec_err']
         losses = list(map(loss_f, outputs))
         rec_err = sum(losses) / len(losses)
@@ -125,8 +121,7 @@ class LightningVAE(pl.LightningModule):
                                           ortho, self.global_step)
 
         tensorboard_logs = dict(
-            [('val_loss', loss),
-             ('val_rec_err', rec_err),
+            [('val_loss', rec_err),
              ('transpose', mt),
              ('orthogonality', ortho),
              ('eigenvalue-error', eig_err)]
@@ -143,7 +138,7 @@ class LightningVAE(pl.LightningModule):
                 'alignment', ma, self.global_step)
             tensorboard_logs = {**tensorboard_logs, **tlog}
 
-        return {'val_loss': loss, 'log': tensorboard_logs}
+        return {'val_loss': rec_err, 'log': tensorboard_logs}
 
     def test_epoch_end(self, outputs):
         pass
