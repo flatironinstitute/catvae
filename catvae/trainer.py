@@ -213,10 +213,6 @@ class LightningVAE(pl.LightningModule):
             '--imputer', help='Imputation technique to use.',
             required=False, type=bool, default=None)
         parser.add_argument(
-            '--likelihood',
-            help='Likelihood distribution (multinomial or gaussian).',
-            required=False, type=bool, default=None)
-        parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
                   '(choices include `cosine` and `steplr`'),
