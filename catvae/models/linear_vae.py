@@ -5,7 +5,7 @@ https://github.com/XuchanBao/linear-ae
 """
 import torch
 import torch.nn as nn
-
+from catvae.composition import ilr
 import numpy as np
 
 LOG_2_PI = np.log(2.0 * np.pi)
@@ -30,7 +30,7 @@ class LinearVAE(nn.Module):
         Psi = torch.sparse_coo_tensor(
             indices.copy(), basis.data.astype(np.float32).copy(),
             requires_grad=False)
-        self.input_dim = Psi.shape[-1]
+        self.input_dim = Psi.shape[0]
         self.register_buffer('Psi', Psi)
 
         if use_batch_norm:
@@ -39,15 +39,15 @@ class LinearVAE(nn.Module):
             self.bn = nn.BatchNorm1d(num_features=hidden_dim)
         else:
             self.bn = None
-
-        self.encoder = nn.Linear(input_dim, hidden_dim, bias=False)
+        self.imputer = lambda x: x + 1
+        self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
 
         self.use_deep_decoder = deep_decoder
         if deep_decoder:
             assert not use_analytic_elbo, ("When using deep decoder, "
                                            "need use_analytic_elbo to be False")
-            self.final_decoder = nn.Linear(hidden_dim, input_dim, bias=False)
+            self.final_decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
 
             num_decoder_layers = decoder_depth
             if use_batch_norm:
@@ -64,7 +64,7 @@ class LinearVAE(nn.Module):
 
             self.decoder = nn.Sequential(*layers)
         else:
-            self.decoder = nn.Linear(hidden_dim, input_dim, bias=False)
+            self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
 
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
 
@@ -125,7 +125,7 @@ class LinearVAE(nn.Module):
         return kl_div - exp_recon_loss
 
     def forward(self, x):
-        x_ = self.Psi.t() @ torch.log(x + 1).t()
+        x_ = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(x_)
 
         if not self.use_analytic_elbo:
@@ -143,12 +143,12 @@ class LinearVAE(nn.Module):
             recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
             loss = kl_div + recon_loss
         else:
-            loss = self.analytic_elbo(x, z_mean)
+            loss = self.analytic_elbo(x_, z_mean)
         elbo = - loss
         return elbo
 
     def get_reconstruction_loss(self, x):
-        x_ = self.Psi.t() @ torch.log(x + 1).t()
+        x_ = ilr(self.imputer(x), self.Psi)
         if self.use_analytic_elbo:
             return - self.analytic_exp_recon_loss(x_)
         else:

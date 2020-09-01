@@ -189,13 +189,6 @@ class LightningVAE(pl.LightningModule):
             '--n-latent', help='Latent embedding dimension.',
             required=False, type=int, default=10)
         parser.add_argument(
-            '--n-layers', help='Number of encoding layers.',
-            required=False, type=int, default=1)
-        parser.add_argument(
-            '--n-samples',
-            help='Number of monte carlo samples for computing expectations.',
-            required=False, type=int, default=1)
-        parser.add_argument(
             '--learning-rate', help='Learning rate',
             required=False, type=float, default=1e-3)
         parser.add_argument(
@@ -204,6 +197,9 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
+        parser.add_argument(
+            '--likelihood', help='Likelihood distribution (gaussian or multinomial).',
+            required=False, type=str, default=True)
         parser.add_argument(
             '--imputer', help='Imputation technique to use.',
             required=False, type=bool, default=None)
@@ -331,7 +327,7 @@ class LightningCatVAE(LightningVAE):
 
 class LightningLinearVAE(LightningVAE):
     def __init__(self, args):
-        super(LightningCatVAE, self).__init__(args)
+        super(LightningLinearVAE, self).__init__(args)
         self.hparams = args
 
         # a sneak peek into file types to initialize model
@@ -352,7 +348,7 @@ class LightningLinearVAE(LightningVAE):
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
-            imputer=self.hparams.imputer,
-            batch_size=self.hparams.batch_size)
+            likelihood=self.hparams.likelihood,
+            use_analytic_elbo=self.hparams.use_analytic_elbo)
         self.gt_eigvectors = None
         self.gt_eigs = None

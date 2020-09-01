@@ -1,25 +1,96 @@
+SIM=test
 
 # Simulate the counts
 simulate-counts.py \
-       --latent-dim 50 \
-       --input-dim 1000 \
-       --samples 10000 \
+       --latent-dim 2 \
+       --input-dim 10 \
+       --samples 100 \
        --depth 100000 \
-       --output-dir simulation
+       --output-dir $SIM
 
-SIM=simulation
-OUT=catvae-fit-analytic
-catvae-train.py \
-    --num-workers 30 \
-    --gpus 1\
-    --eigvalues $SIM/eigvals.txt \
-    --eigvectors $SIM/eigvecs.txt \
-    --basis $SIM/basis.nwk \
-    --learning-rate 1e-3 \
-    --batch-size 1000 \
-    --train-biom $SIM/train.biom \
-    --test-biom $SIM/test.biom \
-    --val-biom $SIM/valid.biom \
-    --epochs 100 \
-    --output-dir $OUT
+bases='basis.nwk alr identity'
+analytic='True False'
+lr=1e-3
+batch_size=10
+epochs=1
+# Analytical Catvae
+# for basis in bases
+# do
+#     OUT=catvae-analytic-$basis
+#     catvae-train.py \
+#         --num-workers 30 \
+#         --gpus 1 \
+#         --eigvalues $SIM/eigvals.txt \
+#         --eigvectors $SIM/eigvecs.txt \
+#         --basis $SIM/basis.nwk \
+#         --learning-rate $lr \
+#         --batch-size $batch_size \
+#         --train-biom $SIM/train.biom \
+#         --test-biom $SIM/test.biom \
+#         --val-biom $SIM/valid.biom \
+#         --epochs $epochs \
+#         --output-dir $OUT
+#
+# done
 
+# Stochastic Catvae
+for basis in bases
+do
+    OUT=catvae-stochastic-$basis
+    linear-vae-train.py \
+        --num-workers 30 \
+        --gpus 1 \
+        --eigvalues $SIM/eigvals.txt \
+        --eigvectors $SIM/eigvecs.txt \
+        --basis $SIM/basis.nwk \
+        --learning-rate $lr \
+        --batch-size $batch_size \
+        --use-analytic-elbo False \
+        --likelihood multinomial \
+        --train-biom $SIM/train.biom \
+        --test-biom $SIM/test.biom \
+        --val-biom $SIM/valid.biom \
+        --epochs $epochs \
+        --output-dir $OUT
+done
+
+# Gaussian linear VAE
+for basis in bases
+do
+    OUT=linear-vae-analytic-$basis
+    linear-vae-train.py \
+        --num-workers 30 \
+        --gpus 1 \
+        --eigvalues $SIM/eigvals.txt \
+        --eigvectors $SIM/eigvecs.txt \
+        --basis $SIM/basis.nwk \
+        --learning-rate $lr \
+        --batch-size $batch_size \
+        --use-analytic-elbo True \
+        --likelihood gaussian \
+        --train-biom $SIM/train.biom \
+        --test-biom $SIM/test.biom \
+        --val-biom $SIM/valid.biom \
+        --epochs $epochs \
+        --output-dir $OUT
+done
+
+for basis in bases
+do
+    OUT=linear-vae-stochastic-$basis
+    linear-vae-train.py \
+        --num-workers 30 \
+        --gpus 1 \
+        --eigvalues $SIM/eigvals.txt \
+        --eigvectors $SIM/eigvecs.txt \
+        --basis $SIM/basis.nwk \
+        --learning-rate $lr \
+        --batch-size $batch_size \
+        --use-analytic-elbo False \
+        --likelihood gaussian \
+        --train-biom $SIM/train.biom \
+        --test-biom $SIM/test.biom \
+        --val-biom $SIM/valid.biom \
+        --epochs $epochs \
+        --output-dir $OUT
+done
