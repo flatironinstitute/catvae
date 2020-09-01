@@ -39,6 +39,7 @@ class LinearCatVAE(nn.Module):
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.01))
         self.eta = nn.Parameter(torch.zeros(batch_size, self.input_dim - 1))
+        self.eta.data.normal_(0.0, init_scale)
         self.encoder.weight.data.normal_(0.0, init_scale)
         self.decoder.weight.data.normal_(0.0, init_scale)
         zI = torch.ones(self.hidden_dim).to(self.eta.device)

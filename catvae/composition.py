@@ -35,3 +35,8 @@ def alr_basis(D, denom=0):
     basis = np.hstack((
         basis[:, :denom], z, basis[:, denom:]))
     return basis
+
+
+def identity_basis(D):
+    basis = np.eye(D)
+    return basis
