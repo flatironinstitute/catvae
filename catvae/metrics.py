@@ -42,6 +42,19 @@ def metric_transpose_theorem(model):
     transpose_metric = np.linalg.norm(encoder_weight - decoder_weight.T) ** 2
     return transpose_metric.item() / float(model.hidden_dim)
 
+def metric_orthogonality(model):
+    """ Measures how orthogonal the decoder matrix is. """
+    W = model.decoder.weight.cpu().numpy()
+    u, s, v = np.linalg.svd(W)
+    eigvals = (W**2).sum(axis=0)
+    Weig = W / np.sqrt(eigvals)
+    I = np.eye(Weig.shape[1])
+    eigvals = np.sqrt(np.sort(eigvals)[::-1])
+    ortho_err = np.linalg.norm(Weig.T @ Weig - I) ** 2 / float(model.hidden_dim)
+    if len(s) < len(eigvals):
+        eigvals = eigvals[:len(s)]
+    eig_err = np.sum((s - eigvals)**2)  / float(model.hidden_dim)
+    return ortho_err, eig_err
 
 def metric_alignment(model, gt_eigvectors):
     """

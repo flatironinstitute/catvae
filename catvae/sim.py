@@ -44,6 +44,7 @@ def multinomial_bioms(k, D, N, M, min_sv=0.11, max_sv=5.0, sigma_sq=0.1):
         sigma=sigma,
         W=W,
         Psi=Psi,
+        tree=tree,
         eta=eta,
         z=z,
         Y=Y,

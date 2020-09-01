@@ -7,12 +7,32 @@ from torch.distributions.distribution import Distribution
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.distributions.multivariate_normal import _batch_mv
 from torch.distributions.utils import _standard_normal
+# from torch.sparse import mm
+from torch import mm
 import numpy as np
 import functools
 
 
 torch.pi = torch.Tensor([torch.acos(torch.zeros(1)).item() * 2])
 
+
+def _batch_mahalanobis_factor(L_inv, x):
+    r"""
+    Computes the squared Mahalanobis distance :math:`\mathbf{x}^\top\mathbf{M}^{-1}\mathbf{x}`
+    for a factored :math:`\mathbf{M} = \mathbf{L}\mathbf{L}^\top`.
+    """
+    xL = (x @ L_inv)
+    xLxt = (xL * x).sum(-1)
+    return xLxt
+
+
+def sparse_identity(d):
+    # i = torch.arange(d)
+    # idx = torch.stack((i, i))
+    # v = torch.ones(d)
+    # Id = torch.sparse_coo_tensor(idx, v, requires_grad=False)
+    Id = torch.eye(d)
+    return Id
 
 class MultivariateNormalFactor(Distribution):
 
@@ -261,3 +281,97 @@ class MultivariateNormalFactorSum(Distribution):
         d = self.mu.shape[-1]
         half_logdet = self.log_det / 2
         return half_logdet + (d / 2) * (torch.log(2 * torch.pi) + 1)
+
+
+class MultivariateNormalFactorIdentity(Distribution):
+
+    def __init__(self, mu, sigma2, D, W, validate_args=None):
+        """ Multivariate normal distribution with the form
+            N(mu, sigma*I + W'DW)"""
+        arg_constraints = {'mu': torch_constraints.real_vector,
+                           'sigma': torch_constraints.positive,
+                           'D': torch_constraints.real_vector,
+                           'W': torch_constraints.real_vector}
+        if mu.dim() < 1:
+            raise ValueError("`mu` must be at least one-dimensional.")
+        d = W.shape[0]
+        self.mu = mu
+        self.sigma2 = sigma2
+        self.D = D
+        self.W = W
+        self.d = d
+        self.Id = sparse_identity(self.d).to(self.mu.device)
+        batch_shape, event_shape = self.mu.shape[:-1], self.mu.shape[-1:]
+        super(MultivariateNormalFactorIdentity, self).__init__(
+            batch_shape, event_shape, validate_args=validate_args)
+
+    @property
+    def covariance_matrix(self):
+        wdw = self.W @ torch.diag(self.D) @ self.W.t()
+        #Id = torch.eye(self.d).to(self.mu.device)
+        s2 = self.Id * self.sigma2
+        return wdw + s2
+
+    @property
+    def precision_matrix(self):
+        # Woodbury identity
+        # inv(A + WDWt) = invA - invA @ W inv(invD + Wt invA W) Wt invA
+        W, D = self.W, self.D
+        #Id = torch.eye(self.d).to(self.mu.device)
+        invA = self.Id * (1 / self.sigma2)
+        invD = torch.diag(1 / D)
+        invAW = mm(invA, W)
+        C = invD + W.t() @ invAW
+        invC = torch.inverse(C)
+        cor = invAW @ invC @ invAW.t()
+        res = (-cor) + invA
+        return res
+
+    @property
+    def log_det(self):
+        # Matrix determinant lemma
+        # det(A + WDWt) = det(invD + Wt invA W) det(D) det (A)
+        W, D = self.W, self.D
+        #Id = torch.eye(self.d).to(self.mu.device)
+        invA = self.Id * (1 / self.sigma2)
+        invD = torch.diag(1 / self.D)
+        invAW = mm(invA, W)
+        logdet_A = torch.log(self.sigma2) * self.d
+        logdet_C = torch.slogdet(invD + W.t() @ invAW)[1]
+        logdet_D = torch.sum(torch.log(self.D))
+        res = logdet_A + logdet_C + logdet_D
+        return res
+
+    @property
+    def mean(self):
+        return self.mu
+
+    @functools.cached_property
+    def cholesky(self):
+        cov = self.covariance_matrix
+        return torch.cholesky(cov)
+
+    @property
+    def variance(self):
+        raise NotImplementedError('`variance` is not implemented.')
+
+    def rsample(self, sample_shape):
+        L = self.cholesky
+        shape = self._extended_shape(sample_shape)
+        eps = _standard_normal(shape, dtype=self.mu.dtype,
+                               device=self.mu.device)
+        return self.mu + _batch_mv(L, eps)
+
+    def log_prob(self, value):
+        if self._validate_args:
+            self._validate_sample(value)
+        diff = value - self.mu
+        L = self.W @ torch.diag(torch.sqrt(self.D))
+        M = _batch_mahalanobis_factor(self.precision_matrix, diff)
+        p = - 0.5 * self.log_det - 0.5 * (
+            self._event_shape[0] * math.log(2 * math.pi) + M
+        )
+        return p
+
+    def entropy(self):
+        pass

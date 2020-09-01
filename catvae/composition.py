@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch.sparse import mm
 
 
 def closure(x):
@@ -20,7 +21,7 @@ def closure(x):
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
 
 def ilr(p, basis):
-    return torch.log(p) @ basis.T
+    return mm(basis, torch.log(p).T).T
 
 
 def ilr_inv(eta, basis):
@@ -33,4 +34,9 @@ def alr_basis(D, denom=0):
     z = - np.ones((D-1, 1))
     basis = np.hstack((
         basis[:, :denom], z, basis[:, denom:]))
+    return basis
+
+
+def identity_basis(D):
+    basis = np.eye(D)
     return basis
