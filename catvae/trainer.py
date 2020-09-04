@@ -195,6 +195,10 @@ class LightningVAE(pl.LightningModule):
             '--batch-size', help='Training batch size',
             required=False, type=int, default=32)
         parser.add_argument(
+            '--steps-per-batch',
+            help='Number of gradient descent steps per batch.',
+            required=False, type=int, default=100)
+        parser.add_argument(
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
         parser.add_argument(
@@ -285,7 +289,7 @@ class LightningCatVAE(LightningVAE):
                        using_native_amp=False, using_lbfgs=False):
         # perform multiple steps with LBFGS to optimize eta
         if optimizer_i == 0:
-            for _ in range(100):
+            for _ in range(self.hparam.steps_per_batch):
                 loss = second_order_closure()
                 #print('current_epoch', current_epoch,
                 #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
@@ -295,7 +299,7 @@ class LightningCatVAE(LightningVAE):
         # update all of the other parameters once
         # eta is optimized
         if optimizer_i == 1:
-            for _ in range(100):
+            for _ in range(self.hparam.steps_per_batch):
                 loss = second_order_closure()
                 #print('current_epoch', current_epoch,
                 #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
