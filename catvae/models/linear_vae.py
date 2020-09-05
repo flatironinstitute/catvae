@@ -144,8 +144,7 @@ class LinearVAE(nn.Module):
             loss = kl_div + recon_loss
         else:
             loss = self.analytic_elbo(x_, z_mean)
-        elbo = - loss
-        return elbo
+        return loss
 
     def get_reconstruction_loss(self, x):
         x_ = ilr(self.imputer(x), self.Psi)
