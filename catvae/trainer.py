@@ -197,7 +197,7 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--steps-per-batch',
             help='Number of gradient descent steps per batch.',
-            required=False, type=int, default=100)
+            required=False, type=int, default=10)
         parser.add_argument(
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
@@ -289,7 +289,7 @@ class LightningCatVAE(LightningVAE):
                        using_native_amp=False, using_lbfgs=False):
         # perform multiple steps with LBFGS to optimize eta
         if optimizer_i == 0:
-            for _ in range(self.hparam.steps_per_batch):
+            for _ in range(self.hparams.steps_per_batch):
                 loss = second_order_closure()
                 #print('current_epoch', current_epoch,
                 #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
@@ -299,7 +299,7 @@ class LightningCatVAE(LightningVAE):
         # update all of the other parameters once
         # eta is optimized
         if optimizer_i == 1:
-            for _ in range(self.hparam.steps_per_batch):
+            for _ in range(self.hparams.steps_per_batch):
                 loss = second_order_closure()
                 #print('current_epoch', current_epoch,
                 #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
@@ -310,11 +310,10 @@ class LightningCatVAE(LightningVAE):
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
 
-
-
     def training_step(self, batch, batch_idx, optimizer_idx):
         # self.model.train()
         counts = batch
+        self.model.reset(batch)
         loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
