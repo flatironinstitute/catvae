@@ -310,6 +310,8 @@ class LightningCatVAE(LightningVAE):
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
 
+
+
     def training_step(self, batch, batch_idx, optimizer_idx):
         # self.model.train()
         counts = batch
