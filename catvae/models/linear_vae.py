@@ -15,7 +15,8 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
                  use_analytic_elbo=True, use_batch_norm=False,
-                 deep_decoder=False, decoder_depth=1, likelihood='gaussian', basis=None):
+                 deep_decoder=False, decoder_depth=1, likelihood='gaussian',
+                 basis=None, imputer=None):
         super(LinearVAE, self).__init__()
 
         self.hidden_dim = hidden_dim
@@ -39,7 +40,12 @@ class LinearVAE(nn.Module):
             self.bn = nn.BatchNorm1d(num_features=hidden_dim)
         else:
             self.bn = None
-        self.imputer = lambda x: x + 1
+
+        if imputer is None:
+            self.imputer = lambda x: x + 1
+        else:
+            self.imputer = imputer
+
         self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
 

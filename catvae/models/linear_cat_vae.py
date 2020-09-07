@@ -17,7 +17,6 @@ class LinearCatVAE(nn.Module):
     def __init__(self, input_dim : int, hidden_dim : int,
                  init_scale : float = 0.001,
                  basis : coo_matrix = None,
-                 imputer : Callable[[torch.Tensor], torch.Tensor]=None,
                  batch_size : int =10):
         super(LinearCatVAE, self).__init__()
         self.hidden_dim = hidden_dim
@@ -31,8 +30,7 @@ class LinearCatVAE(nn.Module):
             requires_grad=False)
         # Psi.requires_grad = False
         self.input_dim = Psi.shape[0]
-        if imputer is None:
-            self.imputer = lambda x: x + 1
+
         self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
         self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
@@ -48,8 +46,8 @@ class LinearCatVAE(nn.Module):
         self.register_buffer('zm', zm)
 
 
-    def forward(self, x):
-        hx = ilr(self.imputer(x), self.Psi)
+    def forward(self, x, xs):
+        hx = ilr(xs, self.Psi)
         z_mean = self.encoder(hx)
         mu = self.decoder(z_mean)
         W = self.decoder.weight
@@ -64,13 +62,13 @@ class LinearCatVAE(nn.Module):
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
-    def reset(self, x):
+    def reset(self, xs):
         with torch.no_grad():
-            hx = ilr(self.imputer(x), self.Psi)
+            hx = ilr(xs, self.Psi)
             self.eta = nn.Parameter(hx)
 
-    def get_reconstruction_loss(self, x):
-        hx = ilr(self.imputer(x), self.Psi)
+    def get_reconstruction_loss(self, x, xs):
+        hx = ilr(xs, self.Psi)
         z_mean = self.encoder(hx)
         eta = self.decoder(z_mean)
         logp = self.Psi.t() @ eta.t()

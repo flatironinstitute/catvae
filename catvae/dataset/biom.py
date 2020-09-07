@@ -93,3 +93,10 @@ def collate_single_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     counts = torch.from_numpy(counts_list).float()
     return counts
+
+def collate_impute_f(batch, imputer):
+    counts_list = np.vstack([b[0] for b in batch])
+    smoothed_counts = imputer(counts_list)
+    counts = torch.from_numpy(counts_list).float()
+    smoothed_counts = torch.from_numpy(smoothed_counts).float()
+    return counts, smoothed_counts

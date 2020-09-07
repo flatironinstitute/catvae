@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR
 )
-from catvae.dataset.biom import collate_single_f, BiomDataset
+from catvae.dataset.biom import collate_single_f, collate_impute_f, BiomDataset
 from catvae.models import LinearCatVAE, LinearVAE
 from catvae.composition import ilr_inv, alr_basis, identity_basis
 from catvae.metrics import (
@@ -16,7 +16,7 @@ import pytorch_lightning as pl
 from skbio import TreeNode
 from skbio.stats.composition import alr_inv, closure
 from gneiss.balances import sparse_balance_basis
-
+from catvae.impute import lda_impute, lda_fit
 from biom import load_table
 from scipy.stats import entropy
 from scipy.sparse import coo_matrix
@@ -50,27 +50,30 @@ class LightningVAE(pl.LightningModule):
 
     def train_dataloader(self):
         train_dataset = BiomDataset(load_table(self.hparams.train_biom))
+        collate_f = lambda x: collate_impute_f(x, self.imputer)
         train_dataloader = DataLoader(
             train_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f, shuffle=True,
+            collate_fn=collate_f, shuffle=True,
             num_workers=self.hparams.num_workers, drop_last=True,
             pin_memory=True)
         return train_dataloader
 
     def val_dataloader(self):
         val_dataset = BiomDataset(load_table(self.hparams.val_biom))
+        collate_f = lambda x: collate_impute_f(x, self.imputer)
         val_dataloader = DataLoader(
             val_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f, shuffle=False,
+            collate_fn=collate_f, shuffle=False,
             num_workers=self.hparams.num_workers, drop_last=True,
             pin_memory=True)
         return val_dataloader
 
     def test_dataloader(self):
         test_dataset = BiomDataset(load_table(self.hparams.test_biom))
+        collate_f = lambda x: collate_impute_f(x, self.imputer)
         test_dataloader = DataLoader(
             test_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f,
+            collate_fn=collate_f,
             shuffle=False, num_workers=self.hparams.num_workers,
             drop_last=True, pin_memory=True)
         return test_dataloader
@@ -92,8 +95,8 @@ class LightningVAE(pl.LightningModule):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_idx):
-        with torch.no_grad():
-            counts = batch
+        with torch.no_counts():
+            grad = batch
             loss = self.model(counts)
             assert torch.isnan(loss).item() is False
 
@@ -205,8 +208,8 @@ class LightningVAE(pl.LightningModule):
             '--likelihood', help='Likelihood distribution (gaussian or multinomial).',
             required=False, type=str, default=True)
         parser.add_argument(
-            '--imputer', help='Imputation technique to use.',
-            required=False, type=bool, default=None)
+            '--imputer', help='Imputation technique to use (default pseudocount).',
+            required=False, type=str, default='pseudocount')
         parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
@@ -240,11 +243,22 @@ class LightningCatVAE(LightningVAE):
         else:
             basis = None
 
+        if self.hparams.imputer == 'pseudocount':
+            self.imputer = lambda x: x + 1
+        elif self.hparams.imputer == 'lda':
+            lda = lda_fit(
+                load_table(self.hparams.train_biom).matrix_data.T,
+                n_components=self.hparams.n_latent
+            )
+            self.imputer = lambda x: lda_impute(lda, x)
+        else:
+            raise ValueError(f'Imputation {self.hparams.imputer} '
+                             'is not implemented.')
+
         self.model = LinearCatVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
-            imputer=self.hparams.imputer,
             batch_size=self.hparams.batch_size)
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -306,17 +320,15 @@ class LightningCatVAE(LightningVAE):
                 optimizer.step(second_order_closure)
                 optimizer.zero_grad()
 
-        loss_ = loss = second_order_closure().item()
+        loss_ = second_order_closure().item()
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
 
-
-
     def training_step(self, batch, batch_idx, optimizer_idx):
         # self.model.train()
-        counts = batch
-        self.model.reset(batch)
-        loss = self.model(counts)
+        counts, smoothed_counts = batch
+        self.model.reset(smoothed_counts)
+        loss = self.model(counts, smoothed_counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -328,6 +340,21 @@ class LightningCatVAE(LightningVAE):
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            counts, smoothed_counts = batch
+            loss = self.model(counts, smoothed_counts)
+            assert torch.isnan(loss).item() is False
+
+            # Record the actual loss.
+            rec_err = self.model.get_reconstruction_loss(
+                counts, smoothed_counts)
+            tensorboard_logs = {'validation_loss': loss,
+                                'val_rec_err': rec_err}
+
+            # log the learning rate
+            return {'validation_loss': loss, 'log': tensorboard_logs}
 
 
 class LightningLinearVAE(LightningVAE):
@@ -349,10 +376,25 @@ class LightningLinearVAE(LightningVAE):
         else:
             basis = None
 
+        # specify imputation
+        if self.hparams.imputer == 'pseudocount':
+            self.imputer = lambda x: x + 1
+        elif self.hparams.imputer == 'lda':
+            lda = lda_fit(
+                load_table(self.hparams.train_biom).matrix_data,
+                n_components=self.hparams.n_latent
+            )
+            self.imputer = lambda x: lda_impute(lda, x)
+        else:
+            raise ValueError(f'Imputation {self.hparams.imputer} '
+                             'is not implemented.')
+
+
         self.model = LinearVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
+            imputer=imputer,
             likelihood=self.hparams.likelihood,
             use_analytic_elbo=self.hparams.use_analytic_elbo)
         self.gt_eigvectors = None
