@@ -8,11 +8,11 @@ simulate-counts.py \
        --depth 100000 \
        --output-dir $SIM
 
-bases='basis.nwk alr identity'
+bases="$SIM/basis.nwk alr identity"
 analytic='True False'
 lr=1e-3
 batch_size=100
-epochs=100
+epochs=2
 # Analytical Catvae
 for basis in $bases
 do
@@ -22,12 +22,13 @@ do
         --gpus 1 \
         --eigvalues $SIM/eigvals.txt \
         --eigvectors $SIM/eigvecs.txt \
-        --basis $SIM/basis.nwk \
+        --basis $basis \
         --learning-rate $lr \
         --batch-size $batch_size \
         --train-biom $SIM/train.biom \
         --test-biom $SIM/test.biom \
         --val-biom $SIM/valid.biom \
+        --steps-per-batch 10 \
         --epochs $epochs \
         --output-dir $OUT
 
@@ -42,7 +43,7 @@ do
         --gpus 1 \
         --eigvalues $SIM/eigvals.txt \
         --eigvectors $SIM/eigvecs.txt \
-        --basis $SIM/basis.nwk \
+        --basis $basis \
         --learning-rate $lr \
         --batch-size $batch_size \
         --use-analytic-elbo False \
@@ -63,7 +64,7 @@ do
         --gpus 1 \
         --eigvalues $SIM/eigvals.txt \
         --eigvectors $SIM/eigvecs.txt \
-        --basis $SIM/basis.nwk \
+        --basis $basis \
         --learning-rate $lr \
         --batch-size $batch_size \
         --use-analytic-elbo True \
@@ -83,7 +84,7 @@ do
         --gpus 1 \
         --eigvalues $SIM/eigvals.txt \
         --eigvectors $SIM/eigvecs.txt \
-        --basis $SIM/basis.nwk \
+        --basis $basis \
         --learning-rate $lr \
         --batch-size $batch_size \
         --use-analytic-elbo False \

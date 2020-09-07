@@ -24,7 +24,7 @@ class LinearVAE(nn.Module):
         self.use_batch_norm = use_batch_norm
 
         if basis is None:
-            tree = random_linkage(self.input_dim)
+            tree = random_linkage(input_dim)
             basis = sparse_balance_basis(tree)[0].copy()
         indices = np.vstack((basis.row, basis.col))
         Psi = torch.sparse_coo_tensor(
