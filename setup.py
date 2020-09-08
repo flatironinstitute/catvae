@@ -40,7 +40,7 @@ setup(name='catvae',
           'jupyter',
           'gneiss==0.4.6',
           'scikit-bio==0.5.6',
-          'tensorboard==2.1.1',
+          'tensorboard==2.2.0',
           'pytorch-lightning==0.9'
       ],
       classifiers=classifiers,

@@ -42,6 +42,19 @@ def metric_transpose_theorem(model):
     transpose_metric = np.linalg.norm(encoder_weight - decoder_weight.T) ** 2
     return transpose_metric.item() / float(model.hidden_dim)
 
+def metric_orthogonality(model):
+    """ Measures how orthogonal the decoder matrix is. """
+    W = model.decoder.weight.cpu().numpy()
+    u, s, v = np.linalg.svd(W)
+    eigvals = (W**2).sum(axis=0)
+    Weig = W / np.sqrt(eigvals)
+    I = np.eye(Weig.shape[1])
+    eigvals = np.sqrt(np.sort(eigvals)[::-1])
+    ortho_err = np.linalg.norm(Weig.T @ Weig - I) ** 2 / float(model.hidden_dim)
+    if len(s) < len(eigvals):
+        eigvals = eigvals[:len(s)]
+    eig_err = np.sum((s - eigvals)**2)  / float(model.hidden_dim)
+    return ortho_err, eig_err
 
 def metric_alignment(model, gt_eigvectors):
     """
@@ -51,8 +64,7 @@ def metric_alignment(model, gt_eigvectors):
     :return: sum_i (1 - max_j (cos(eigvector_i, normalized_decoder column_j)))
     """
     #decoder_weight = get_weight_tensor_from_seq(model.decoder)
-    decoder_np = model.decoder.weight.cpu().numpy()
-
+    decoder_np = model.decoder.weight.cpu().numpy()[:gt_eigvectors.shape[0], :]
     # normalize columns of gt_eigvectors
     norm_gt_eigvectors = gt_eigvectors / np.linalg.norm(gt_eigvectors, axis=0)
     # normalize columns of decoder
@@ -69,8 +81,7 @@ def metric_alignment(model, gt_eigvectors):
 def metric_subspace(model, gt_eigvectors, gt_eigs):
     #decoder_weight = get_weight_tensor_from_seq(model.decoder)
     # decoder_np = model.get_loadings(decoder=True)
-    decoder_np = model.decoder.weight.cpu().numpy()
-
+    decoder_np = model.decoder.weight.cpu().numpy()[:gt_eigvectors.shape[0], :]
     # k - tr(UU^T WW^T), where W is left singular vector matrix of decoder
     u, s, vh = np.linalg.svd(decoder_np, full_matrices=False)
     return 1 - np.trace(gt_eigvectors @ gt_eigvectors.T @ u @ u.T) / float(model.hidden_dim)
