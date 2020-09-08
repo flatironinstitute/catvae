@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from scipy.spatial import procrustes
+from scipy.spatial.distance import pdist
+from scipy.stats import pearsonr
 
 
 def get_weight_tensor_from_seq(weight_seq):
@@ -85,3 +88,16 @@ def metric_subspace(model, gt_eigvectors, gt_eigs):
     # k - tr(UU^T WW^T), where W is left singular vector matrix of decoder
     u, s, vh = np.linalg.svd(decoder_np, full_matrices=False)
     return 1 - np.trace(gt_eigvectors @ gt_eigvectors.T @ u @ u.T) / float(model.hidden_dim)
+
+
+def metric_procrustes(model, gt_eigvectors):
+    W = model.decoder.weight.cpu().numpy()[:gt_eigvectors.shape[0], :]
+    return procrustes(gt_eigvectors, W)[2]
+
+def metric_pairwise(model, gt_eigvectors, gt_eigs):
+    W = model.decoder.weight.cpu().numpy()[:gt_eigvectors.shape[0], :]
+    trueW = gt_eigvectors @ np.diag(gt_eigs)
+    true_dW = pdist(trueW)
+    est_dW = pdist(W)
+    r, _ = pearsonr(true_dW, est_dW)
+    return r

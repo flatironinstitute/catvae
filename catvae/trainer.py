@@ -10,8 +10,8 @@ from catvae.dataset.biom import collate_single_f, BiomDataset
 from catvae.models import LinearCatVAE, LinearVAE
 from catvae.composition import ilr_inv, alr_basis, identity_basis
 from catvae.metrics import (
-    metric_subspace, metric_transpose_theorem,
-    metric_alignment, metric_orthogonality)
+    metric_subspace, metric_transpose_theorem, metric_pairwise,
+    metric_procrustes, metric_alignment, metric_orthogonality)
 import pytorch_lightning as pl
 from skbio import TreeNode
 from skbio.stats.composition import alr_inv, closure
@@ -114,24 +114,30 @@ class LightningVAE(pl.LightningModule):
         rec_err = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_rec_err',
                                           rec_err, self.global_step)
-        mt = metric_transpose_theorem(self.model)
-        self.logger.experiment.add_scalar('transpose', mt, self.global_step)
+        if self.hparams.encoder_depth == 1:
+            mt = metric_transpose_theorem(self.model)
+            self.logger.experiment.add_scalar('transpose', mt, self.global_step)
         ortho, eig_err = metric_orthogonality(self.model)
         self.logger.experiment.add_scalar('orthogonality',
                                           ortho, self.global_step)
 
         tensorboard_logs = dict(
             [('val_loss', rec_err),
-             ('transpose', mt),
+             # ('transpose', mt),
              ('orthogonality', ortho),
              ('eigenvalue-error', eig_err)]
         )
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
-            ms = metric_subspace(
-                self.model, self.gt_eigvectors, self.gt_eigs)
+            ms = metric_subspace(self.model, self.gt_eigvectors, self.gt_eigs)
             ma = metric_alignment(self.model, self.gt_eigvectors)
-            tlog = {'subspace_distance': ms, 'alignment': ma}
+            mp = metric_procrustes(self.model, self.gt_eigvectors)
+            mr = metric_pairwise(self.model, self.gt_eigvectors, self.gt_eigs)
+            tlog = {'subspace_distance': ms, 'alignment': ma, 'procrustes': mp}
+            self.logger.experiment.add_scalar(
+                'procrustes', mp, self.global_step)
+            self.logger.experiment.add_scalar(
+                'pairwise_r', mr, self.global_step)
             self.logger.experiment.add_scalar(
                 'subspace_distance', ms, self.global_step)
             self.logger.experiment.add_scalar(
@@ -189,6 +195,9 @@ class LightningVAE(pl.LightningModule):
             '--n-latent', help='Latent embedding dimension.',
             required=False, type=int, default=10)
         parser.add_argument(
+            '--encoder-depth', help='Number of encoding layers.',
+            required=False, type=int, default=1)
+        parser.add_argument(
             '--learning-rate', help='Learning rate',
             required=False, type=float, default=1e-3)
         parser.add_argument(
@@ -245,6 +254,7 @@ class LightningCatVAE(LightningVAE):
             hidden_dim=self.hparams.n_latent,
             basis=basis,
             imputer=self.hparams.imputer,
+            encoder_depth=self.hparams.encoder_depth,
             batch_size=self.hparams.batch_size)
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -309,7 +319,6 @@ class LightningCatVAE(LightningVAE):
         loss_ = loss = second_order_closure().item()
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
-
 
 
     def training_step(self, batch, batch_idx, optimizer_idx):

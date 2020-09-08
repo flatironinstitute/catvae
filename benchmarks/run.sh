@@ -2,7 +2,7 @@ SIM=test
 
 # Simulate the counts
 simulate-counts.py \
-       --latent-dim 2 \
+       --latent-dim 10 \
        --input-dim 20 \
        --samples 1000 \
        --depth 100000 \
