@@ -14,14 +14,13 @@ LOG_2_PI = np.log(2.0 * np.pi)
 class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
-                 use_analytic_elbo=True, use_batch_norm=False,
-                 deep_decoder=False, decoder_depth=1, likelihood='gaussian', basis=None):
+                 use_analytic_elbo=True, encoder_depth=1,
+                 likelihood='gaussian', basis=None):
         super(LinearVAE, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.likelihood = likelihood
         self.use_analytic_elbo = use_analytic_elbo
-        self.use_batch_norm = use_batch_norm
 
         if basis is None:
             tree = random_linkage(input_dim)
@@ -33,49 +32,31 @@ class LinearVAE(nn.Module):
         self.input_dim = Psi.shape[0]
         self.register_buffer('Psi', Psi)
 
-        if use_batch_norm:
-            assert not use_analytic_elbo, ("When using batch norm, "
-                                           "need use_analytic_elbo to be False")
-            self.bn = nn.BatchNorm1d(num_features=hidden_dim)
+        if encoder_depth > 1:
+            self.first_encoder = nn.Linear(
+                self.input_dim, hidden_dim, bias=False)
+            num_encoder_layers = encoder_depth
+            layers = []
+            layers.append(self.first_encoder)
+            for layer_i in range(num_encoder_layers - 1):
+                layers.append(
+                    nn.Linear(hidden_dim, hidden_dim, bias=False))
+                layers.append(nn.ReLU())
+            self.encoder = nn.Sequential(*layers)
+
+            # initialize
+            for encoder_layer in self.encoder:
+                if isinstance(encoder_layer, nn.Linear):
+                    encoder_layer.weight.data.normal_(0.0, init_scale)
+
         else:
-            self.bn = None
+            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
+            self.encoder.weight.data.normal_(0.0, init_scale)
+
+        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
         self.imputer = lambda x: x + 1
-        self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
-
-        self.use_deep_decoder = deep_decoder
-        if deep_decoder:
-            assert not use_analytic_elbo, ("When using deep decoder, "
-                                           "need use_analytic_elbo to be False")
-            self.final_decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
-
-            num_decoder_layers = decoder_depth
-            if use_batch_norm:
-                layers = []
-                for layer_i in range(num_decoder_layers - 1):
-                    layers.append(nn.Linear(hidden_dim, hidden_dim, bias=False))
-                    layers.append(nn.BatchNorm1d(num_features=hidden_dim))
-                layers.append(self.final_decoder)
-            else:
-                layers = []
-                for layer_i in range(num_decoder_layers - 1):
-                    layers.append(nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(self.final_decoder)
-
-            self.decoder = nn.Sequential(*layers)
-        else:
-            self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
-
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-
-        self.encoder.weight.data.normal_(0.0, init_scale)
-
-        if isinstance(self.decoder, nn.Sequential):
-            for decoder_layer in self.decoder:
-                if isinstance(decoder_layer, nn.Linear):
-                    decoder_layer.weight.data.normal_(0.0, init_scale)
-        else:
-            self.decoder.weight.data.normal_(0.0, init_scale)
 
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
