@@ -1,7 +1,9 @@
 import numpy as np
 import torch
 from torch.sparse import mm
-
+from gneiss.util import match_tips
+from gneiss.balances import sparse_balance_basis
+from skbio import TreeNode
 
 def closure(x):
     denom = torch.sum(x, dim=-1)
@@ -26,6 +28,15 @@ def ilr(p, basis):
 
 def ilr_inv(eta, basis):
     return torch.nn.Softmax(eta @ basis, dim=-1)
+
+
+def ilr_basis(nwk, table):
+    tree = TreeNode.read(nwk)
+    t = tree.copy()
+    t.bifurcate()
+    table, t = match_tips(table, t)
+    basis = sparse_balance_basis(tree)[0]
+    return basis
 
 
 def alr_basis(D, denom=0):

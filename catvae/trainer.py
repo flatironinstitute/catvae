@@ -8,14 +8,14 @@ from torch.optim.lr_scheduler import (
 )
 from catvae.dataset.biom import collate_single_f, BiomDataset
 from catvae.models import LinearCatVAE, LinearVAE
-from catvae.composition import ilr_inv, alr_basis, identity_basis
+from catvae.composition import (ilr_inv, alr_basis,
+                                ilr_basis, identity_basis)
 from catvae.metrics import (
     metric_subspace, metric_transpose_theorem, metric_pairwise,
     metric_procrustes, metric_alignment, metric_orthogonality)
 import pytorch_lightning as pl
 from skbio import TreeNode
 from skbio.stats.composition import alr_inv, closure
-from gneiss.balances import sparse_balance_basis
 
 from biom import load_table
 from scipy.stats import entropy
@@ -236,12 +236,11 @@ class LightningCatVAE(LightningVAE):
         self.hparams = args
 
         # a sneak peek into file types to initialize model
-        n_input = load_table(self.hparams.train_biom).shape[0]
-
+        table = load_table(self.hparams.train_biom)
+        n_input = table.shape[0]
         if (self.hparams.basis is not None and
             os.path.exists(self.hparams.basis)):
-            tree = TreeNode.read(self.hparams.basis)
-            basis = sparse_balance_basis(tree)[0]
+            basis = ilr_basis(self.hparams.basis, table)
         elif self.hparams.basis == 'alr':
             basis = coo_matrix(alr_basis(n_input))
         elif self.hparams.basis == 'identity':
@@ -347,10 +346,12 @@ class LightningLinearVAE(LightningVAE):
         # a sneak peek into file types to initialize model
         n_input = load_table(self.hparams.train_biom).shape[0]
 
+        # a sneak peek into file types to initialize model
+        table = load_table(self.hparams.train_biom)
+        n_input = table.shape[0]
         if (self.hparams.basis is not None and
             os.path.exists(self.hparams.basis)):
-            tree = TreeNode.read(self.hparams.basis)
-            basis = sparse_balance_basis(tree)[0]
+            basis = ilr_basis(self.hparams.basis, table)
         elif self.hparams.basis == 'alr':
             basis = coo_matrix(alr_basis(n_input))
         elif self.hparams.basis == 'identity':
