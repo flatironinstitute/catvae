@@ -1,11 +1,13 @@
 """
 Author : XuchanBao
-This code was taken from
+This code was adapted from
 https://github.com/XuchanBao/linear-ae
 """
 import torch
 import torch.nn as nn
 from catvae.composition import ilr
+from gneiss.cluster import random_linkage
+from gneiss.balances import sparse_balance_basis
 import numpy as np
 
 LOG_2_PI = np.log(2.0 * np.pi)

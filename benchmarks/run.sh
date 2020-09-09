@@ -1,4 +1,4 @@
-SIM=test
+SIM=sparse_sim
 
 # Simulate the counts
 simulate-counts.py \
