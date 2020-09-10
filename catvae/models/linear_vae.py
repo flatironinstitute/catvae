@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from catvae.composition import ilr
 import numpy as np
+from torch_sparse import coalesce
 
 LOG_2_PI = np.log(2.0 * np.pi)
 
@@ -25,11 +26,14 @@ class LinearVAE(nn.Module):
         if basis is None:
             tree = random_linkage(input_dim)
             basis = sparse_balance_basis(tree)[0].copy()
-        indices = np.vstack((basis.row, basis.col))
-        Psi = torch.sparse_coo_tensor(
-            indices.copy(), basis.data.astype(np.float32).copy(),
-            requires_grad=False)
-        self.input_dim = Psi.shape[0]
+
+
+        indices = torch.Tensor(np.vstack((basis.row, basis.col)))
+        values = torch.Tensor(basis.data.astype(np.float32).copy())
+        m, n = basis.shape
+        Psi = coalesce(indices, values, m, n)
+        Psi.requires_grad = False
+        self.input_dim = m
         self.register_buffer('Psi', Psi)
 
         if encoder_depth > 1:
@@ -64,13 +68,13 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         if self.likelihood == 'gaussian':
-            x_in = self.Psi.t() @ torch.log(x + 1).t()
+            x_in = ilr(torch.log(self.imputer(x)), self.Psi)
             diff = (x_in - x_out) ** 2
             sigma_sq = torch.exp(self.log_sigma_sq)
             # No dimension constant as we sum after
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
-            x_out = self.Psi.t() @ x_out.t()
+            x_out = ilr(x_out, self.Psi)
             logp = F.softmax(x_out)
             mult_loss = Multinomial(logits=logp).log_prob(x).mean()
             return mult_loss
@@ -106,7 +110,7 @@ class LinearVAE(nn.Module):
         return kl_div - exp_recon_loss
 
     def forward(self, x):
-        x_ = ilr(self.imputer(x), self.Psi)
+        x_ = ilr(torch.log(self.imputer(x)), self.Psi)
         z_mean = self.encoder(x_)
 
         if not self.use_analytic_elbo:
@@ -128,7 +132,7 @@ class LinearVAE(nn.Module):
         return loss
 
     def get_reconstruction_loss(self, x):
-        x_ = ilr(self.imputer(x), self.Psi)
+        x_ = ilr(torch.log(self.imputer(x)), self.Psi)
         if self.use_analytic_elbo:
             return - self.analytic_exp_recon_loss(x_)
         else:

@@ -7,6 +7,7 @@ import numpy as np
 from torch.distributions import Multinomial, MultivariateNormal, Normal
 from catvae.composition import closure, ilr
 from catvae.distributions.mvn import MultivariateNormalFactorIdentity
+from catvae.sparse import SparseMatrix
 from typing import Callable
 
 LOG_2_PI = np.log(2.0 * np.pi)
@@ -26,14 +27,11 @@ class LinearCatVAE(nn.Module):
         if basis is None:
             tree = random_linkage(input_dim)
             basis = sparse_balance_basis(tree)[0].copy()
-        indices = np.vstack((basis.row, basis.col))
-        Psi = torch.sparse_coo_tensor(
-            indices.copy(), basis.data.astype(np.float32).copy(),
-            requires_grad=False)
 
+        self.Psi = SparseMatrix.fromcoo(basis)
+        self.Psi.requires_grad = False
 
-        # Psi.requires_grad = False
-        self.input_dim = Psi.shape[0]
+        self.input_dim = self.Psi.shape[0]
         if imputer is None:
             self.imputer = lambda x: x + 1
 
@@ -53,7 +51,6 @@ class LinearCatVAE(nn.Module):
             for encoder_layer in self.encoder:
                 if isinstance(encoder_layer, nn.Linear):
                     encoder_layer.weight.data.normal_(0.0, init_scale)
-
         else:
             self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
             self.encoder.weight.data.normal_(0.0, init_scale)
@@ -67,10 +64,27 @@ class LinearCatVAE(nn.Module):
         self.decoder.weight.data.normal_(0.0, init_scale)
         zI = torch.ones(self.hidden_dim).to(self.eta.device)
         zm = torch.zeros(self.hidden_dim).to(self.eta.device)
-        self.register_buffer('Psi', Psi)
+        # self.register_buffer('Psi', Psi)
         self.register_buffer('zI', zI)
         self.register_buffer('zm', zm)
 
+    def to(self, device):
+        self.encoder = self.encoder.to(device)
+        self.decoder = self.decoder.to(device)
+        self.log_sigma_sq = self.log_sigma_sq.to(device)
+        self.variational_logvars = self.variational_logvars.to(device)
+        self.Psi = self.Psi.to(device)
+        self.eta = self.eta.to(device)
+        return self
+
+    def cuda(self, device):
+        self.encoder = self.encoder.cuda()
+        self.decoder = self.decoder.cuda()
+        self.log_sigma_sq = self.log_sigma_sq.cuda()
+        self.variational_logvars = self.variational_logvars.cuda()
+        self.Psi = self.Psi.cuda()
+        self.eta = self.eta.cuda()
+        return self
 
     def forward(self, x):
         hx = ilr(self.imputer(x), self.Psi)
@@ -81,10 +95,10 @@ class LinearCatVAE(nn.Module):
         D = torch.exp(self.variational_logvars)
         var = torch.exp(self.log_sigma_sq)
         qdist = MultivariateNormalFactorIdentity(mu, var, D, W)
-        logp = self.Psi.t() @ self.eta.t()
+        logp = ilr_inv(self.eta, self.Psi)
         prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
         logit_loss = qdist.log_prob(self.eta).mean()
-        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
+        mult_loss = Multinomial(logits=logp).log_prob(x).mean()
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
@@ -97,6 +111,6 @@ class LinearCatVAE(nn.Module):
         hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)
         eta = self.decoder(z_mean)
-        logp = self.Psi.t() @ eta.t()
-        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
+        logp = ilr_inv(self.eta, self.Psi)
+        mult_loss = Multinomial(logits=logp).log_prob(x).mean()
         return - mult_loss

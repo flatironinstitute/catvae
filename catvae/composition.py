@@ -20,11 +20,34 @@ def closure(x):
     else:
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
 
-def ilr(p, basis):
-    return mm(basis, torch.log(p).T).T
+
+def ilr(logp, basis):
+    """ Performs ILR transform on log probs.
+
+    Parameters
+    ----------
+    eta : torch.Tensor
+        Isometric log ratios.
+    basis : SparseMatrix
+        Contrast matrix of dimension D - 1 x D
+    """
+    return logp @ basis.t()
 
 
 def ilr_inv(eta, basis):
+    """ Performs inverse ILR transform, converting log ratios to logs.
+
+    Parameters
+    ----------
+    eta : torch.Tensor
+        Isometric log ratios.
+    basis : SparseMatrix
+        Contrast matrix of dimension D - 1 x D
+    """
+    return eta @ basis
+
+
+def ilr_inv_exp(eta, basis):
     return torch.nn.Softmax(eta @ basis, dim=-1)
 
 
