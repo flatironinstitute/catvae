@@ -318,14 +318,17 @@ class MultivariateNormalFactorIdentity(Distribution):
         # inv(A + WDWt) = invA - invA @ W inv(invD + Wt invA W) Wt invA
         W, D = self.W, self.D
         #Id = torch.eye(self.d).to(self.mu.device)
-        invA = self.Id * (1 / self.sigma2)
+        #invA = self.Id * (1 / self.sigma2)
         invD = torch.diag(1 / D)
-        invAW = mm(invA, W)
+        #invAW = mm(invA, W)
+        invAW = W / self.sigma2
         C = invD + W.t() @ invAW
         invC = torch.inverse(C)
         cor = invAW @ invC @ invAW.t()
-        res = (-cor) + invA
-        return res
+        #res = (-cor) + invA
+        idx = torch.arange(self.d)
+        cor[idx, idx] -= (1 / self.sigma2)
+        return -cor
 
     @property
     def log_det(self):
@@ -333,9 +336,10 @@ class MultivariateNormalFactorIdentity(Distribution):
         # det(A + WDWt) = det(invD + Wt invA W) det(D) det (A)
         W, D = self.W, self.D
         #Id = torch.eye(self.d).to(self.mu.device)
-        invA = self.Id * (1 / self.sigma2)
+        #invA = self.Id * (1 / self.sigma2)
         invD = torch.diag(1 / self.D)
-        invAW = mm(invA, W)
+        #invAW = mm(invA, W)
+        invAW = W / self.sigma2
         logdet_A = torch.log(self.sigma2) * self.d
         logdet_C = torch.slogdet(invD + W.t() @ invAW)[1]
         logdet_D = torch.sum(torch.log(self.D))
