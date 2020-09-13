@@ -8,7 +8,15 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
 def main(args):
-    model = LightningCatVAE(args)
+    print('args', args)
+    if args.load_from_checkpoint is not None:
+        model = LightningCatVAE(args)
+        checkpoint = torch.load(
+            args.load_from_checkpoint,
+            map_location=lambda storage, loc: storage)
+        model.load_state_dict(checkpoint['state_dict'])
+    else:
+        model = LightningCatVAE(args)
     if (args.eigvectors is not None and
         args.eigvalues is not None):
         eigvectors = np.loadtxt(args.eigvectors)
@@ -50,5 +58,6 @@ if __name__ == '__main__':
                         help='Ground truth eigenvalues (optional)', required=False)
     parser.add_argument('--eigvectors', type=str, default=None,
                         help='Ground truth eigenvectors (optional)', required=False)
+    parser.add_argument('--load-from-checkpoint', type=str, default=None)
     args = parser.parse_args()
     main(args)

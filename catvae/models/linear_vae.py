@@ -107,6 +107,11 @@ class LinearVAE(nn.Module):
 
         return kl_div - exp_recon_loss
 
+    def encode(self, x):
+        hx = ilr(self.imputer(x), self.Psi)
+        z = self.encoder(hx)
+        return z
+
     def forward(self, x):
         x_ = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(x_)
