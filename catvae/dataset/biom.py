@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
 
