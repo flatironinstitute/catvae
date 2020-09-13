@@ -300,33 +300,32 @@ class LightningCatVAE(LightningVAE):
                        using_native_amp=False, using_lbfgs=False):
         # perform multiple steps with LBFGS to optimize eta
         if optimizer_i == 0:
-            #for _ in range(self.hparams.steps_per_batch):
-            loss = second_order_closure()
-            #print('current_epoch', current_epoch,
-            #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
-            optimizer.step(second_order_closure)
-            optimizer.zero_grad()
+            for _ in range(self.hparams.steps_per_batch):
+                loss = second_order_closure()
+                # print('current_epoch', current_epoch,
+                #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
+                optimizer.step(second_order_closure)
+                optimizer.zero_grad()
 
         # update all of the other parameters once
         # eta is optimized
         if optimizer_i == 1:
-            #for _ in range(self.hparams.steps_per_batch):
-            loss = second_order_closure()
-            #print('current_epoch', current_epoch,
-            #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
-            optimizer.step(second_order_closure)
-            optimizer.zero_grad()
+            for _ in range(self.hparams.steps_per_batch):
+                loss = second_order_closure()
+                # print('current_epoch', current_epoch,
+                #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
+                optimizer.step(second_order_closure)
+                optimizer.zero_grad()
 
         loss_ = loss = second_order_closure().item()
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
 
-
     def training_step(self, batch, batch_idx, optimizer_idx):
-        # self.model.train()
+        self.model.train()
         counts = batch
-        if batch_idx % self.hparams.steps_per_batch  == 0:
-            self.model.reset(batch)
+        # TODO: try to figure out a smart initialization strategy.
+        # self.model.reset(batch)
         loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:

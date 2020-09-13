@@ -92,9 +92,9 @@ class LinearCatVAE(nn.Module):
         return -loglike
 
     def reset(self, x):
-        with torch.no_grad():
-            hx = ilr(self.imputer(x), self.Psi)
-            self.eta = nn.Parameter(hx)
+        #with torch.no_grad():
+        hx = ilr(self.imputer(x), self.Psi)
+        self.eta.data = hx
 
     def get_reconstruction_loss(self, x):
         hx = ilr(self.imputer(x), self.Psi)
