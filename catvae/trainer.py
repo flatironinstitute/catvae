@@ -158,12 +158,9 @@ class LightningVAE(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine_warm':
+        if self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
-        elif self.hparams.scheduler == 'cosine':
-            scheduler = CosineAnnealingLR(
-                optimizer, T_max=self.hparams.steps_per_batch * 10)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-1  # maximum learning rate
             steps = int(np.log2(m / self.hparams.learning_rate))

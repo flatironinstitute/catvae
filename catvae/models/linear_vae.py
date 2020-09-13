@@ -98,11 +98,6 @@ class LinearVAE(nn.Module):
                     LOG_2_PI + self.log_sigma_sq) / 2.0
         return exp_recon_loss
 
-    def encode(self, x):
-        hx = ilr(self.imputer(x), self.Psi)
-        z = self.encoder(hx)
-        return z
-
     def analytic_elbo(self, x, z_mean):
         """Computes the analytic ELBO for a linear VAE.
         """
