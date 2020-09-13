@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR
 )
-from catvae.dataset.biom import collate_single_f, BiomDataset
+from catvae.dataset.biom import collate_single_f, BiomDataset, IterableBiomDataset
 from catvae.models import LinearCatVAE, LinearVAE
 from catvae.composition import (ilr_inv, alr_basis,
                                 ilr_basis, identity_basis)
@@ -56,8 +56,8 @@ class LightningVAE(pl.LightningModule):
         train_dataset = BiomDataset(load_table(self.hparams.train_biom))
         train_dataloader = DataLoader(
             train_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f, shuffle=True,
-            num_workers=self.hparams.num_workers, drop_last=True,
+            collate_fn=collate_single_f,
+            num_workers=self.hparams.num_workers, drop_last=False,
             pin_memory=True)
         return train_dataloader
 
