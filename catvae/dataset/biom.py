@@ -19,8 +19,6 @@ class BiomDataset(Dataset):
         Filepath to biom table
     metadata_file : Path
         Filepath to sample metadata
-    formula : str
-        R-style formula for specifying sample-specific covariates.
     batch_category : str
         Column name forr batch indices
     """
@@ -28,7 +26,7 @@ class BiomDataset(Dataset):
             self,
             table: biom.Table,
             metadata: pd.DataFrame = None,
-            batch_category: str = None
+            batch_category: str = None,
     ):
         super(BiomDataset).__init__()
         self.table = table
@@ -89,7 +87,7 @@ class BiomDataset(Dataset):
         return counts, batch_indices
 
 
-class IterableBiomDataset(Dataset):
+class IterableBiomDataset(IterableDataset):
     """Loads a `.biom` file.
 
     Parameters
@@ -98,21 +96,26 @@ class IterableBiomDataset(Dataset):
         Filepath to biom table
     metadata_file : Path
         Filepath to sample metadata
-    formula : str
-        R-style formula for specifying sample-specific covariates.
     batch_category : str
         Column name forr batch indices
+    repeat_batch : int
+        Number of times to repeat batch
+
+    TODO : Investigate how to properly to multiple inheritance.
+    We may be able to inherit from both BiomDataset and IterableDataset
     """
     def __init__(
             self,
             table: biom.Table,
             metadata: pd.DataFrame = None,
-            batch_category: str = None
+            batch_category: str = None,
+            repeat_batchs : int = 0
     ):
         super(IterableBiomDataset).__init__()
         self.table = table
         self.metadata = metadata
         self.batch_category = batch_category
+        self.repeat_batchs = repeat_batchs
         self.populate()
 
     def populate(self):
@@ -128,7 +131,6 @@ class IterableBiomDataset(Dataset):
                 raise ValueError('`Index` must have a name either'
                                  '`sampleid`, `sample-id` or #SampleID')
             self.index_name = self.metadata.index.name
-
             self.metadata = self.metadata.reset_index()
 
         self.batch_indices = None
@@ -142,30 +144,17 @@ class IterableBiomDataset(Dataset):
 
         logger.info("Finished preprocessing dataset")
 
-    def __len__(self) -> int:
-        return len(self.table.ids())
-
     def __getitem__(self, i):
-        """ Returns all of the samples for a given subject
-        Returns
-        -------
-        counts : np.array
-            OTU counts for specified samples.
-        time : np.array
-            Time points for each of the subject samples.
-        batch_indices : np.array
-            Membership ids for batch samples. If not specified, return None.
-        labels : np.array
-            Sample covariates. If not specified, return None.
-        """
         sample_idx = self.table.ids()[i]
         if self.batch_indices is not None:
             batch_indices = self.batch_indices[i]
         else:
             batch_indices = None
-
         counts = self.table.data(id=sample_idx, axis='sample')
         return counts, batch_indices
+
+    def __len__(self) -> int:
+        return len(self.table.ids())
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
