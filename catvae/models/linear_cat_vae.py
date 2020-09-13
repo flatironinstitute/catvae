@@ -31,7 +31,6 @@ class LinearCatVAE(nn.Module):
             indices.copy(), basis.data.astype(np.float32).copy(),
             requires_grad=False)
 
-
         # Psi.requires_grad = False
         self.input_dim = Psi.shape[0]
         if imputer is None:
@@ -59,9 +58,10 @@ class LinearCatVAE(nn.Module):
             self.encoder.weight.data.normal_(0.0, init_scale)
 
         self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
-        self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
-        self.log_sigma_sq = nn.Parameter(torch.tensor(0.01))
-        self.eta = nn.Parameter(torch.zeros(batch_size, self.input_dim))
+        self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim),
+                                                requires_grad=True)
+        self.log_sigma_sq = nn.Parameter(torch.tensor(0.01), requires_grad=True)
+        self.eta = nn.Parameter(torch.zeros(batch_size, self.input_dim), requires_grad=True)
         self.eta.data.normal_(0.0, init_scale)
         #self.encoder.weight.data.normal_(0.0, init_scale)
         self.decoder.weight.data.normal_(0.0, init_scale)

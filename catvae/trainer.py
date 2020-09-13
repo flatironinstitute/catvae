@@ -6,7 +6,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR
 )
-from catvae.dataset.biom import collate_single_f, BiomDataset
+from catvae.dataset.biom import (collate_single_f,
+                                 BiomDataset, IterableBiomDataset)
 from catvae.models import LinearCatVAE, LinearVAE
 from catvae.composition import (ilr_inv, alr_basis,
                                 ilr_basis, identity_basis)
@@ -42,7 +43,6 @@ class LightningVAE(pl.LightningModule):
     def to_latent(self, X):
         return self.model.encode(X)
 
-
     def initialize_logging(self, root_dir='./', logging_path=None):
         if logging_path is None:
             basename = "logdir"
@@ -53,11 +53,15 @@ class LightningVAE(pl.LightningModule):
         return writer
 
     def train_dataloader(self):
+        # train_dataset = IterableBiomDataset(
+        #     load_table(self.hparams.train_biom),
+        #     repeat_batchs=self.hparams.steps_per_batch)
         train_dataset = BiomDataset(load_table(self.hparams.train_biom))
         train_dataloader = DataLoader(
             train_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f, shuffle=True,
-            num_workers=self.hparams.num_workers, drop_last=True,
+            collate_fn=collate_single_f,
+            num_workers=self.hparams.num_workers,
+            # drop_last=True,
             pin_memory=True)
         return train_dataloader
 
@@ -278,18 +282,11 @@ class LightningCatVAE(LightningVAE):
             list(self.model.decoder.parameters()) +
             [self.model.log_sigma_sq, self.model.variational_logvars],
             lr=self.hparams.learning_rate)
-
         if self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-5  # min learning rate
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = 100 * self.hparams.epochs // steps
-            scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'inv_steplr':
-            m = 1e-3  # max learning rate
-            optimizer = torch.optim.Adam(params, lr=m)
             steps = int(np.log2(m / self.hparams.learning_rate))
             steps = 100 * self.hparams.epochs // steps
             scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
@@ -305,22 +302,22 @@ class LightningCatVAE(LightningVAE):
                        using_native_amp=False, using_lbfgs=False):
         # perform multiple steps with LBFGS to optimize eta
         if optimizer_i == 0:
-            for _ in range(self.hparams.steps_per_batch):
-                loss = second_order_closure()
-                #print('current_epoch', current_epoch,
-                #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
-                optimizer.step(second_order_closure)
-                optimizer.zero_grad()
+            #for _ in range(self.hparams.steps_per_batch):
+            loss = second_order_closure()
+            #print('current_epoch', current_epoch,
+            #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
+            optimizer.step(second_order_closure)
+            optimizer.zero_grad()
 
         # update all of the other parameters once
         # eta is optimized
         if optimizer_i == 1:
-            for _ in range(self.hparams.steps_per_batch):
-                loss = second_order_closure()
-                #print('current_epoch', current_epoch,
-                #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
-                optimizer.step(second_order_closure)
-                optimizer.zero_grad()
+            #for _ in range(self.hparams.steps_per_batch):
+            loss = second_order_closure()
+            #print('current_epoch', current_epoch,
+            #      'batch', batch_nb, 'optimizer', optimizer_i, loss)
+            optimizer.step(second_order_closure)
+            optimizer.zero_grad()
 
         loss_ = loss = second_order_closure().item()
         self.logger.experiment.add_scalar(
@@ -330,7 +327,8 @@ class LightningCatVAE(LightningVAE):
     def training_step(self, batch, batch_idx, optimizer_idx):
         # self.model.train()
         counts = batch
-        self.model.reset(batch)
+        if batch_idx % self.hparams.steps_per_batch  == 0:
+            self.model.reset(batch)
         loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
