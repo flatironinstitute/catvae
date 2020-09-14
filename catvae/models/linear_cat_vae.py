@@ -11,6 +11,9 @@ from typing import Callable
 
 LOG_2_PI = np.log(2.0 * np.pi)
 
+def swish(x):
+    return x * F.sigmoid(x)
+
 
 class LinearCatVAE(nn.Module):
 
@@ -37,15 +40,15 @@ class LinearCatVAE(nn.Module):
             self.imputer = lambda x: x + 1
 
         if encoder_depth > 1:
-            self.first_encoder = nn.Linear(
+            first_encoder = nn.Linear(
                 self.input_dim, hidden_dim, bias=False)
             num_encoder_layers = encoder_depth
             layers = []
-            layers.append(self.first_encoder)
+            layers.append(first_encoder)
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(nn.ReLU())
+                layers.append(swish)
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -91,10 +94,8 @@ class LinearCatVAE(nn.Module):
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
-    def reset(self, x):
-        #with torch.no_grad():
-        hx = ilr(self.imputer(x), self.Psi)
-        self.eta.data = hx
+    def reset(self, hx):
+        return self.eta + hx
 
     def get_reconstruction_loss(self, x):
         hx = ilr(self.imputer(x), self.Psi)

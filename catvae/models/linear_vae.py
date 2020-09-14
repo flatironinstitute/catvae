@@ -12,6 +12,9 @@ import numpy as np
 
 LOG_2_PI = np.log(2.0 * np.pi)
 
+def swish(x):
+    return x * F.sigmoid(x)
+
 
 class LinearVAE(nn.Module):
 
@@ -35,15 +38,15 @@ class LinearVAE(nn.Module):
         self.register_buffer('Psi', Psi)
 
         if encoder_depth > 1:
-            self.first_encoder = nn.Linear(
+            first_encoder = nn.Linear(
                 self.input_dim, hidden_dim, bias=False)
             num_encoder_layers = encoder_depth
             layers = []
-            layers.append(self.first_encoder)
+            layers.append(first_encoder)
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(nn.ReLU())
+                layers.append(swish)
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -73,7 +76,7 @@ class LinearVAE(nn.Module):
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
             x_out = self.Psi.t() @ x_out.t()
-            logp = F.softmax(x_out)
+            logp = F.logsoftmax(x_out)
             mult_loss = Multinomial(logits=logp).log_prob(x).mean()
             return mult_loss
 
@@ -115,17 +118,12 @@ class LinearVAE(nn.Module):
     def forward(self, x):
         x_ = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(x_)
-
         if not self.use_analytic_elbo:
             eps = torch.normal(torch.zeros_like(z_mean), 1.0)
-
             z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
-
             if self.use_batch_norm:
                 z_sample = self.bn(z_sample)
-
             x_out = self.decoder(z_sample)
-
             kl_div = (-self.gaussian_kl(
                 z_mean, self.variational_logvars)).mean(0).sum()
             recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
@@ -149,5 +147,5 @@ class LinearVAE(nn.Module):
 
             x_out = self.decoder(z_sample)
 
-            recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
+            recon_loss = -self.recon_model_loglik(x, x_out)
             return recon_loss

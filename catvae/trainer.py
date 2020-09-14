@@ -91,6 +91,8 @@ class LightningVAE(pl.LightningModule):
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss, 'lr': current_lr
         }
+        self.logger.experiment.add_scalar(
+            'train_loss', loss.item(), self.global_step)
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
@@ -314,7 +316,7 @@ class LightningCatVAE(LightningVAE):
                 optimizer.step(second_order_closure)
                 optimizer.zero_grad()
 
-        loss_ = loss = second_order_closure().item()
+        loss_ = second_order_closure().item()
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
 
