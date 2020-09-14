@@ -6,13 +6,11 @@ from scipy.sparse import coo_matrix
 import numpy as np
 from torch.distributions import Multinomial, MultivariateNormal, Normal
 from catvae.composition import closure, ilr
+from catvae.layers import CustomSwish
 from catvae.distributions.mvn import MultivariateNormalFactorIdentity
 from typing import Callable
 
 LOG_2_PI = np.log(2.0 * np.pi)
-
-def swish(x):
-    return x * F.sigmoid(x)
 
 
 class LinearCatVAE(nn.Module):
@@ -48,7 +46,7 @@ class LinearCatVAE(nn.Module):
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(swish)
+                layers.append(CustomSwish())
             self.encoder = nn.Sequential(*layers)
 
             # initialize

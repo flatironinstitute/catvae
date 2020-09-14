@@ -6,6 +6,7 @@ https://github.com/XuchanBao/linear-ae
 import torch
 import torch.nn as nn
 from catvae.composition import ilr
+from catvae.layers import CustomSwish
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
 import numpy as np
@@ -14,6 +15,24 @@ LOG_2_PI = np.log(2.0 * np.pi)
 
 def swish(x):
     return x * F.sigmoid(x)
+
+
+class Swish(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, i):
+        result = i * torch.sigmoid(i)
+        ctx.save_for_backward(i)
+        return result
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        i = ctx.saved_variables[0]
+        sigmoid_i = torch.sigmoid(i)
+        return grad_output * (sigmoid_i * (1 + i * (1 - sigmoid_i)))
+
+class CustomSwish(nn.Module):
+    def forward(self, input_tensor):
+        return CustomSwish.apply(input_tensor)
 
 
 class LinearVAE(nn.Module):
@@ -46,7 +65,7 @@ class LinearVAE(nn.Module):
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(swish)
+                layers.append(CustomSwish())
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -75,9 +94,8 @@ class LinearVAE(nn.Module):
             # No dimension constant as we sum after
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
-            x_out = self.Psi.t() @ x_out.t()
-            logp = F.logsoftmax(x_out)
-            mult_loss = Multinomial(logits=logp).log_prob(x).mean()
+            logp = self.Psi.t() @ x_out.t()
+            mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
             return mult_loss
 
     def analytic_exp_recon_loss(self, x):
