@@ -63,9 +63,9 @@ class LinearVAE(nn.Module):
             layers = []
             layers.append(first_encoder)
             for layer_i in range(num_encoder_layers - 1):
+                layers.append(CustomSwish())
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(CustomSwish())
             self.encoder = nn.Sequential(*layers)
 
             # initialize
