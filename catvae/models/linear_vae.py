@@ -43,7 +43,7 @@ class LinearVAE(nn.Module):
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(nn.ReLU())
+                layers.append(nn.Softplus())
             self.encoder = nn.Sequential(*layers)
 
             # initialize

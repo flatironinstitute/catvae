@@ -45,7 +45,7 @@ class LinearCatVAE(nn.Module):
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=False))
-                layers.append(nn.ReLU())
+                layers.append(nn.Softplus())
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -87,12 +87,16 @@ class LinearCatVAE(nn.Module):
         logp = self.Psi.t() @ self.eta.t()
         prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
         logit_loss = qdist.log_prob(self.eta).mean()
+        # print('logit_loss', logit_loss.grad_fn, 'logp', logp.grad_fn)
         mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
 
     def reset(self, x):
-        #with torch.no_grad():
+        hx = ilr(self.imputer(x), self.Psi)
+        self.eta.data = hx.data
+
+    def encode(self, x):
         hx = ilr(self.imputer(x), self.Psi)
         self.eta.data = hx
 

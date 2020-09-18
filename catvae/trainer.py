@@ -80,7 +80,7 @@ class LightningVAE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         self.model.train()
-        counts = batch
+        counts = batch.to(self.device)
         loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
@@ -269,7 +269,7 @@ class LightningCatVAE(LightningVAE):
         #     [self.model.eta], lr=self.hparams.learning_rate,
         #     tolerance_grad=1e-7,
         #     history_size=100, max_iter=1000)
-        optimizer_eta = torch.optim.SGD(
+        optimizer_eta = torch.optim.Adam(
             [self.model.eta], lr=self.hparams.learning_rate)
 
         optimizer = torch.optim.Adam(
@@ -298,9 +298,6 @@ class LightningCatVAE(LightningVAE):
         # perform multiple steps with LBFGS to optimize eta
         if optimizer_i == 0:
             for _ in range(self.hparams.steps_per_batch):
-                loss = second_order_closure()
-                # print('current_epoch', current_epoch,
-                #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
                 optimizer.step(second_order_closure)
                 optimizer.zero_grad()
 
@@ -308,21 +305,22 @@ class LightningCatVAE(LightningVAE):
         # eta is optimized
         if optimizer_i == 1:
             for _ in range(self.hparams.steps_per_batch):
-                loss = second_order_closure()
                 # print('current_epoch', current_epoch,
                 #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
                 optimizer.step(second_order_closure)
                 optimizer.zero_grad()
 
-        loss_ = loss = second_order_closure().item()
+        loss_ = second_order_closure().item()
         self.logger.experiment.add_scalar(
             'train_loss', loss_, self.global_step)
 
+    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+        counts = batch.to(self.device)
+        self.model.reset(counts)
+
     def training_step(self, batch, batch_idx, optimizer_idx):
         self.model.train()
-        counts = batch
-        # TODO: try to figure out a smart initialization strategy.
-        # self.model.reset(batch)
+        counts = batch.to(self.device)
         loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
