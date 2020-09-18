@@ -265,10 +265,6 @@ class LightningCatVAE(LightningVAE):
         self.gt_eigs = None
 
     def configure_optimizers(self):
-        # optimizer_eta = torch.optim.LBFGS(
-        #     [self.model.eta], lr=self.hparams.learning_rate,
-        #     tolerance_grad=1e-7,
-        #     history_size=100, max_iter=1000)
         optimizer_eta = torch.optim.Adam(
             [self.model.eta], lr=self.hparams.learning_rate)
 
