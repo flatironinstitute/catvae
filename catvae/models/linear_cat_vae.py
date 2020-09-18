@@ -31,7 +31,6 @@ class LinearCatVAE(nn.Module):
             indices.copy(), basis.data.astype(np.float32).copy(),
             requires_grad=False)
 
-
         # Psi.requires_grad = False
         self.input_dim = Psi.shape[0]
         if imputer is None:
@@ -71,6 +70,10 @@ class LinearCatVAE(nn.Module):
         self.register_buffer('zI', zI)
         self.register_buffer('zm', zm)
 
+    def encode(self, x):
+        hx = ilr(self.imputer(x), self.Psi)
+        z = self.encoder(hx)
+        return z
 
     def forward(self, x):
         hx = ilr(self.imputer(x), self.Psi)
@@ -95,8 +98,7 @@ class LinearCatVAE(nn.Module):
 
     def encode(self, x):
         hx = ilr(self.imputer(x), self.Psi)
-        z = self.encoder(hx)
-        return z
+        self.eta.data = hx
 
     def get_reconstruction_loss(self, x):
         hx = ilr(self.imputer(x), self.Psi)

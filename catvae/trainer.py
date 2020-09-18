@@ -277,18 +277,11 @@ class LightningCatVAE(LightningVAE):
             list(self.model.decoder.parameters()) +
             [self.model.log_sigma_sq, self.model.variational_logvars],
             lr=self.hparams.learning_rate)
-
         if self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-5  # min learning rate
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = 100 * self.hparams.epochs // steps
-            scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'inv_steplr':
-            m = 1e-3  # max learning rate
-            optimizer = torch.optim.Adam(params, lr=m)
             steps = int(np.log2(m / self.hparams.learning_rate))
             steps = 100 * self.hparams.epochs // steps
             scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
@@ -305,19 +298,13 @@ class LightningCatVAE(LightningVAE):
         # perform multiple steps with LBFGS to optimize eta
         if optimizer_i == 0:
             for _ in range(self.hparams.steps_per_batch):
-                #loss = second_order_closure()
-                # print('current_epoch', current_epoch,
-                #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
-
                 optimizer.step(second_order_closure)
                 optimizer.zero_grad()
-
 
         # update all of the other parameters once
         # eta is optimized
         if optimizer_i == 1:
             for _ in range(self.hparams.steps_per_batch):
-                #loss = second_order_closure()
                 # print('current_epoch', current_epoch,
                 #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
                 optimizer.step(second_order_closure)

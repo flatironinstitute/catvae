@@ -27,6 +27,7 @@ def main(args):
         gpus=args.gpus,
         check_val_every_n_epoch=1,
         gradient_clip_val=args.grad_clip,
+        accumulate_grad_batches=args.grad_accum
     )
     ckpt_path = os.path.join(
         args.output_directory,
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     parser = LightningCatVAE.add_model_specific_args(parser)
     parser.add_argument('--num-workers', type=int)
     parser.add_argument('--gpus', type=int)
+    parser.add_argument('--grad-accum', type=int, default=1)
     parser.add_argument('--grad-clip', type=int, default=10)
     parser.add_argument('--eigvalues', type=str, default=None,
                         help='Ground truth eigenvalues (optional)', required=False)

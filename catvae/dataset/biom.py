@@ -1,11 +1,11 @@
 import os
 import biom
+import math
 import logging
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,6 @@ class BiomDataset(Dataset):
         Filepath to biom table
     metadata_file : Path
         Filepath to sample metadata
-    formula : str
-        R-style formula for specifying sample-specific covariates.
     batch_category : str
         Column name forr batch indices
     """
@@ -28,7 +26,7 @@ class BiomDataset(Dataset):
             self,
             table: biom.Table,
             metadata: pd.DataFrame = None,
-            batch_category: str = None
+            batch_category: str = None,
     ):
         super(BiomDataset).__init__()
         self.table = table
@@ -87,6 +85,27 @@ class BiomDataset(Dataset):
 
         counts = self.table.data(id=sample_idx, axis='sample')
         return counts, batch_indices
+
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        start = 0
+        end = self.__len__()
+
+        if worker_info is None:  # single-process data loading
+            for i in range(end):
+                yield self.__getitem__(i)
+        else:
+            worker_id = worker_info.id
+            w = float(worker_info.num_workers)
+            t = (end - start)
+            w = float(worker_info.num_workers)
+            per_worker = int(math.ceil(t / w))
+            worker_id = worker_info.id
+            iter_start = start + worker_id * per_worker
+            iter_end = min(iter_start + per_worker, end)
+            for i in range(iter_start, iter_end):
+                yield self.__getitem__(i)
 
 
 def collate_single_f(batch):
