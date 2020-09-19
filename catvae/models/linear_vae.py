@@ -66,15 +66,14 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         if self.likelihood == 'gaussian':
-            x_in = self.Psi.t() @ torch.log(x + 1).t()
+            x_in = self.Psi.t() @ torch.log(x_in + 1).t()
             diff = (x_in - x_out) ** 2
             sigma_sq = torch.exp(self.log_sigma_sq)
             # No dimension constant as we sum after
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
-            x_out = self.Psi.t() @ x_out.t()
-            logp = F.softmax(x_out)
-            mult_loss = Multinomial(logits=logp).log_prob(x).mean()
+            logp = self.Psi.t() @ x_out.t()
+            mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
             return mult_loss
 
     def analytic_exp_recon_loss(self, x):
@@ -149,5 +148,5 @@ class LinearVAE(nn.Module):
 
             x_out = self.decoder(z_sample)
 
-            recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
+            recon_loss = -self.recon_model_loglik(x, x_out)
             return recon_loss
