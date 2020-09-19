@@ -19,9 +19,10 @@ class LinearCatVAE(nn.Module):
                  basis : coo_matrix = None,
                  encoder_depth : int = 1,
                  imputer : Callable[[torch.Tensor], torch.Tensor]=None,
-                 batch_size : int =10):
+                 batch_size : int =10, bias=True):
         super(LinearCatVAE, self).__init__()
         self.hidden_dim = hidden_dim
+        self.bias = bias
         # Psi must be dimension D - 1 x D
         if basis is None:
             tree = random_linkage(input_dim)
@@ -38,13 +39,13 @@ class LinearCatVAE(nn.Module):
 
         if encoder_depth > 1:
             self.first_encoder = nn.Linear(
-                self.input_dim, hidden_dim, bias=False)
+                self.input_dim, hidden_dim, bias=self.bias)
             num_encoder_layers = encoder_depth
             layers = []
             layers.append(self.first_encoder)
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
-                    nn.Linear(hidden_dim, hidden_dim, bias=False))
+                    nn.Linear(hidden_dim, hidden_dim, bias=self.bias))
                 layers.append(nn.Softplus())
             self.encoder = nn.Sequential(*layers)
 
@@ -54,7 +55,7 @@ class LinearCatVAE(nn.Module):
                     encoder_layer.weight.data.normal_(0.0, init_scale)
 
         else:
-            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
+            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=self.bias)
             self.encoder.weight.data.normal_(0.0, init_scale)
 
         self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)

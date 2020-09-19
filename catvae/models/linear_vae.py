@@ -17,9 +17,9 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
                  use_analytic_elbo=True, encoder_depth=1,
-                 likelihood='gaussian', basis=None):
+                 likelihood='gaussian', basis=None, bias=False):
         super(LinearVAE, self).__init__()
-
+        self.bias = bias
         self.hidden_dim = hidden_dim
         self.likelihood = likelihood
         self.use_analytic_elbo = use_analytic_elbo
@@ -36,13 +36,13 @@ class LinearVAE(nn.Module):
 
         if encoder_depth > 1:
             self.first_encoder = nn.Linear(
-                self.input_dim, hidden_dim, bias=False)
+                self.input_dim, hidden_dim, bias=self.bias)
             num_encoder_layers = encoder_depth
             layers = []
             layers.append(self.first_encoder)
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(
-                    nn.Linear(hidden_dim, hidden_dim, bias=False))
+                    nn.Linear(hidden_dim, hidden_dim, bias=self.bias))
                 layers.append(nn.Softplus())
             self.encoder = nn.Sequential(*layers)
 
@@ -52,10 +52,10 @@ class LinearVAE(nn.Module):
                     encoder_layer.weight.data.normal_(0.0, init_scale)
 
         else:
-            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
+            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=self.bias)
             self.encoder.weight.data.normal_(0.0, init_scale)
 
-        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
+        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=self.bias)
         self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
