@@ -162,10 +162,11 @@ class BiomBatchDataset(BiomDataset):
                 m = self.metadata[self.batch_category].astype(np.int64)
                 self.metadata[self.batch_category] = m.astype(np.str)
                 cols = self.batch_differentials.columns
-            def regex_f(x):
-                return re.findall(r"\[([A-Za-z0-9_]+).*\]", x)[0]
-            cols = list(map(regex_f, cols))
-            self.batch_differentials.columns = cols
+                def regex_f(x):
+                    return re.findall(r"\[([A-Za-z0-9_]+).*\]", x)[0]
+                cols = list(map(regex_f, cols))
+                self.batch_differentials.columns = cols
+
         # Retrieve batch labels
         batch_cats = np.unique(self.metadata[self.batch_category].values)
         batch_cats = pd.Series(
@@ -207,7 +208,7 @@ def collate_single_f(batch):
     return counts
 
 
-def collate_single_batch(batch):
+def collate_batch_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     batch_diffs = np.vstack([b[1] for b in batch])
     counts = torch.from_numpy(counts_list).float()
