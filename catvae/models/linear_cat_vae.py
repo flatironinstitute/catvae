@@ -21,6 +21,16 @@ class LinearCatVAE(nn.Module):
                  imputer : Callable[[torch.Tensor], torch.Tensor]=None,
                  batch_size : int =10, bias=True):
         super(LinearCatVAE, self).__init__()
+        self.initialize(input_dim, hidden_dim, init_scale,
+                        basis, encoder_depth, imputer,
+                        batch_size, bias)
+
+    def initialize(self, input_dim : int, hidden_dim : int,
+                   init_scale : float = 0.001,
+                   basis : coo_matrix = None,
+                   encoder_depth : int = 1,
+                   imputer : Callable[[torch.Tensor], torch.Tensor]=None,
+                   batch_size : int =10, bias=True):
         self.hidden_dim = hidden_dim
         self.bias = bias
         # Psi must be dimension D - 1 x D
@@ -63,7 +73,6 @@ class LinearCatVAE(nn.Module):
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.01))
         self.eta = nn.Parameter(torch.zeros(batch_size, self.input_dim))
         self.eta.data.normal_(0.0, init_scale)
-        #self.encoder.weight.data.normal_(0.0, init_scale)
         self.decoder.weight.data.normal_(0.0, init_scale)
         zI = torch.ones(self.hidden_dim).to(self.eta.device)
         zm = torch.zeros(self.hidden_dim).to(self.eta.device)
@@ -88,7 +97,6 @@ class LinearCatVAE(nn.Module):
         logp = self.Psi.t() @ self.eta.t()
         prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
         logit_loss = qdist.log_prob(self.eta).mean()
-        # print('logit_loss', logit_loss.grad_fn, 'logp', logp.grad_fn)
         mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
         loglike = mult_loss + logit_loss + prior_loss
         return -loglike
@@ -98,9 +106,55 @@ class LinearCatVAE(nn.Module):
         self.eta.data = hx.data
 
     def get_reconstruction_loss(self, x):
+<<<<<<< HEAD
+=======
         hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)
         eta = self.decoder(z_mean)
+        logp = self.Psi.t() @ eta.t()
+        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
+        return - mult_loss
+
+
+class LinearBatchCatVAE(LinearCatVAE):
+    def __init__(self, input_dim : int, hidden_dim : int,
+                 init_scale : float = 0.001,
+                 basis : coo_matrix = None,
+                 encoder_depth : int = 1,
+                 imputer : Callable[[torch.Tensor], torch.Tensor]=None,
+                 batch_size : int =10, bias=True):
+        super(LinearBatchCatVAE, self).__init__(
+            input_dim, hidden_dim, init_scale,
+            basis, encoder_depth, imputer,
+            batch_size, bias
+        )
+
+    def forward(self, x, B):
+        hx = ilr(self.imputer(x), self.Psi)
+        batch_effects = (self.Psi @ B.t()).t()
+        hx -= batch_effects  # Subtract out batch effects
+        z_mean = self.encoder(hx)
+        mu = self.decoder(z_mean)
+        mu += batch_effects  # Add batch effects back in
+        W = self.decoder.weight
+        # penalties
+        D = torch.exp(self.variational_logvars)
+        var = torch.exp(self.log_sigma_sq)
+        qdist = MultivariateNormalFactorIdentity(mu, var, D, W)
+        logp = self.Psi.t() @ self.eta.t()
+        prior_loss = Normal(self.zm, self.zI).log_prob(z_mean).mean()
+        logit_loss = qdist.log_prob(self.eta).mean()
+        mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
+        loglike = mult_loss + logit_loss + prior_loss
+        return -loglike
+
+    def get_reconstruction_loss(self, x, B):
+        hx = ilr(self.imputer(x), self.Psi)
+        batch_effects = (self.Psi @ B.t()).t()
+        hx -= batch_effects  # Subtract out batch effects
+        z_mean = self.encoder(hx)
+        eta = self.decoder(z_mean)
+        eta += batch_effects   # Add batch effects back in
         logp = self.Psi.t() @ eta.t()
         mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
         return - mult_loss
