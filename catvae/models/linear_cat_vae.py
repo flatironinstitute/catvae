@@ -97,10 +97,6 @@ class LinearCatVAE(nn.Module):
         hx = ilr(self.imputer(x), self.Psi)
         self.eta.data = hx.data
 
-    def encode(self, x):
-        hx = ilr(self.imputer(x), self.Psi)
-        self.eta.data = hx
-
     def get_reconstruction_loss(self, x):
         hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)
