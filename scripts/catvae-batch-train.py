@@ -51,7 +51,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
-    parser = LightningCatVAE.add_model_specific_args(parser)
+    parser = LightningBatchCatVAE.add_model_specific_args(parser)
     parser.add_argument('--num-workers', type=int)
     parser.add_argument('--gpus', type=int)
     parser.add_argument('--grad-accum', type=int, default=1)
