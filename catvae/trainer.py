@@ -213,6 +213,9 @@ class LightningVAE(pl.LightningModule):
             '--batch-size', help='Training batch size',
             required=False, type=int, default=32)
         parser.add_argument(
+            '--batch-differentials', help='Pre-learned batch effect variables',
+            required=False, type=str, default=None)
+        parser.add_argument(
             '--steps-per-batch',
             help='Number of gradient descent steps per batch.',
             required=False, type=int, default=10)
@@ -237,6 +240,7 @@ class LightningVAE(pl.LightningModule):
             '-o', '--output-directory',
             help='Output directory of model results', required=True)
         return parser
+
 
 # Main VAE classes
 class LightningCatVAE(LightningVAE):
