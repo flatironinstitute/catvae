@@ -155,12 +155,12 @@ class LightningVAE(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine_warm':
+        if self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
-        elif self.hparams.scheduler == 'cosine':
-            scheduler = CosineAnnealingLR(
-                optimizer, T_max=self.hparams.steps_per_batch * 10)
+        # elif self.hparams.scheduler == 'cosine':
+        #     scheduler = CosineAnnealingLR(
+        #         optimizer, T_max=self.hparams.steps_per_batch * 10)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-1  # maximum learning rate
             steps = int(np.log2(m / self.hparams.learning_rate))
@@ -200,6 +200,9 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--n-latent', help='Latent embedding dimension.',
             required=False, type=int, default=10)
+        parser.add_argument(
+            '--bias', help='Use bias.',
+            required=False, type=bool, default=False)
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -260,7 +263,9 @@ class LightningCatVAE(LightningVAE):
             basis=basis,
             imputer=self.hparams.imputer,
             encoder_depth=self.hparams.encoder_depth,
-            batch_size=self.hparams.batch_size)
+            batch_size=self.hparams.batch_size,
+            bias=self.hparams.bias
+        )
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -361,6 +366,7 @@ class LightningLinearVAE(LightningVAE):
             hidden_dim=self.hparams.n_latent,
             basis=basis,
             likelihood=self.hparams.likelihood,
-            use_analytic_elbo=self.hparams.use_analytic_elbo)
+            use_analytic_elbo=self.hparams.use_analytic_elbo,
+            bias=self.hparams.bias)
         self.gt_eigvectors = None
         self.gt_eigs = None

@@ -17,9 +17,9 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
                  use_analytic_elbo=True, encoder_depth=1,
-                 likelihood='gaussian', basis=None):
+                 likelihood='gaussian', basis=None, bias=False):
         super(LinearVAE, self).__init__()
-
+        self.bias = bias
         self.hidden_dim = hidden_dim
         self.likelihood = likelihood
         self.use_analytic_elbo = use_analytic_elbo
@@ -36,14 +36,14 @@ class LinearVAE(nn.Module):
 
         if encoder_depth > 1:
             self.first_encoder = nn.Linear(
-                self.input_dim, hidden_dim, bias=False)
+                self.input_dim, hidden_dim, bias=self.bias)
             num_encoder_layers = encoder_depth
             layers = []
             layers.append(self.first_encoder)
             for layer_i in range(num_encoder_layers - 1):
-                layers.append(
-                    nn.Linear(hidden_dim, hidden_dim, bias=False))
                 layers.append(nn.Softplus())
+                layers.append(
+                    nn.Linear(hidden_dim, hidden_dim, bias=self.bias))
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -52,10 +52,10 @@ class LinearVAE(nn.Module):
                     encoder_layer.weight.data.normal_(0.0, init_scale)
 
         else:
-            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=False)
+            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=self.bias)
             self.encoder.weight.data.normal_(0.0, init_scale)
 
-        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=False)
+        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=self.bias)
         self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
@@ -66,15 +66,14 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         if self.likelihood == 'gaussian':
-            x_in = self.Psi.t() @ torch.log(x + 1).t()
+            x_in = self.Psi.t() @ torch.log(x_in + 1).t()
             diff = (x_in - x_out) ** 2
             sigma_sq = torch.exp(self.log_sigma_sq)
             # No dimension constant as we sum after
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
-            x_out = self.Psi.t() @ x_out.t()
-            logp = F.softmax(x_out)
-            mult_loss = Multinomial(logits=logp).log_prob(x).mean()
+            logp = self.Psi.t() @ x_out.t()
+            mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
             return mult_loss
 
     def analytic_exp_recon_loss(self, x):
@@ -149,5 +148,5 @@ class LinearVAE(nn.Module):
 
             x_out = self.decoder(z_sample)
 
-            recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
+            recon_loss = -self.recon_model_loglik(x, x_out)
             return recon_loss
