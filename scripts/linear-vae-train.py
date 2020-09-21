@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
 def main(args):
-    model = LightningLinearVAE(args)
+    model = LightningLinearBatchVAE(args)
     if (args.eigvectors is not None and
         args.eigvalues is not None):
         eigvectors = np.loadtxt(args.eigvectors)

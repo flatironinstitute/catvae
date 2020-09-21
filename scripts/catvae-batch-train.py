@@ -17,6 +17,7 @@ def main(args):
         model.load_state_dict(checkpoint['state_dict'])
     else:
         model = LightningBatchCatVAE(args)
+    print(model)
     if (args.eigvectors is not None and
         args.eigvalues is not None):
         eigvectors = np.loadtxt(args.eigvectors)

@@ -8,6 +8,7 @@ import torch.nn as nn
 from catvae.composition import ilr
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
+from torch.distributions import Multinomial
 import numpy as np
 
 LOG_2_PI = np.log(2.0 * np.pi)
@@ -65,6 +66,7 @@ class LinearVAE(nn.Module):
         # return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
 
     def recon_model_loglik(self, x_in, x_out):
+        # WARNING : the gaussian likelidhood is not supported
         if self.likelihood == 'gaussian':
             x_in = self.Psi.t() @ torch.log(x_in + 1).t()
             diff = (x_in - x_out) ** 2
@@ -120,9 +122,6 @@ class LinearVAE(nn.Module):
 
             z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
 
-            if self.use_batch_norm:
-                z_sample = self.bn(z_sample)
-
             x_out = self.decoder(z_sample)
 
             kl_div = (-self.gaussian_kl(
@@ -143,10 +142,47 @@ class LinearVAE(nn.Module):
 
             z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
 
-            if self.use_batch_norm:
-                z_sample = self.bn(z_sample)
-
             x_out = self.decoder(z_sample)
 
             recon_loss = -self.recon_model_loglik(x, x_out)
             return recon_loss
+
+
+class LinearBatchVAE(LinearVAE):
+    def __init__(self, input_dim, hidden_dim, init_scale=0.001,
+                 encoder_depth=1,
+                 likelihood='gaussian', basis=None, bias=False):
+        """ Only the stochastic version will be made available. """
+        super(LinearBatchVAE, self).__init__(
+            input_dim, hidden_dim, init_scale,
+            likelihood=likelihood,
+            use_analytic_elbo=False,
+            basis=basis, encoder_depth=encoder_depth,
+            bias=bias)
+
+    def forward(self, x, B):
+        hx = ilr(self.imputer(x), self.Psi)
+        batch_effects = (self.Psi @ B.t()).t()
+        hx -= batch_effects  # Subtract out batch effects
+        z_mean = self.encoder(hx)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        x_out = self.decoder(z_sample)
+        x_out += batch_effects  # Add batch effects back in
+        kl_div = (-self.gaussian_kl(
+            z_mean, self.variational_logvars)).mean(0).sum()
+        recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
+        loss = kl_div + recon_loss
+        return loss
+
+    def get_reconstruction_loss(self, x, B):
+        hx = ilr(self.imputer(x), self.Psi)
+        batch_effects = (self.Psi @ B.t()).t()
+        hx -= batch_effects  # Subtract out batch effects
+        z_mean = self.encoder(hx)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        x_out = self.decoder(z_sample)
+        x_out += batch_effects  # Add batch effects back in
+        recon_loss = -self.recon_model_loglik(x, x_out)
+        return recon_loss
