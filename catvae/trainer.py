@@ -485,3 +485,37 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
         )
         self.gt_eigvectors = None
         self.gt_eigs = None
+
+    def training_step(self, batch, batch_idx):
+        self.model.train()
+        counts, batch_effect = batch
+        counts = counts.to(self.device)
+        batch_effect = batch_effect.to(self.device)
+        loss = self.model(counts, batch_effect)
+        assert torch.isnan(loss).item() is False
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams.learning_rate
+        tensorboard_logs = {
+            'train_loss': loss, 'elbo': -loss, 'lr': current_lr
+        }
+        # log the learning rate
+        return {'loss': loss, 'log': tensorboard_logs}
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            counts, batch_effect = batch
+            counts = counts.to(self.device)
+            batch_effect = batch_effect.to(self.device)
+            loss = self.model(counts, batch_effect)
+            assert torch.isnan(loss).item() is False
+
+            # Record the actual loss.
+            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
+            tensorboard_logs = {'validation_loss': loss,
+                                'val_rec_err': rec_err}
+
+            # log the learning rate
+            return {'validation_loss': loss, 'log': tensorboard_logs}

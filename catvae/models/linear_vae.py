@@ -74,7 +74,7 @@ class LinearVAE(nn.Module):
             # No dimension constant as we sum after
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
-            logp = self.Psi.t() @ x_out.t()
+            logp = (self.Psi.t() @ x_out.t()).t()
             mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
             return mult_loss
 
@@ -184,5 +184,6 @@ class LinearBatchVAE(LinearVAE):
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
         x_out += batch_effects  # Add batch effects back in
+
         recon_loss = -self.recon_model_loglik(x, x_out)
         return recon_loss
