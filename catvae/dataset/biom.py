@@ -165,6 +165,7 @@ class BiomBatchDataset(BiomDataset):
                 def regex_f(x):
                     return re.findall(r"\[([A-Za-z0-9_]+).*\]", x)[0]
                 cols = list(map(regex_f, cols))
+                print('columns', cols)
                 self.batch_differentials.columns = cols
 
         # Retrieve batch labels
@@ -195,10 +196,11 @@ class BiomBatchDataset(BiomDataset):
             Membership ids for batch samples.
         """
         sample_idx = self.table.ids()[i]
-        batch_indices = self.batch_indices[i]
+        batch_index = self.batch_indices[i]
         counts = self.table.data(id=sample_idx, axis='sample')
         batch_diffs = self.batch_differentials
-        batch_diffs = np.array(batch_diffs.iloc[:, batch_indices].values)
+        assert batch_index < batch_diffs.shape[1], f'Batch diffs " {batch_diffs.shape[1]} > index : {batch_index}'
+        batch_diffs = np.array(batch_diffs.iloc[:, batch_index].values)
         return counts, batch_diffs
 
 

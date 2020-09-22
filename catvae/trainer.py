@@ -10,7 +10,7 @@ from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
     collate_batch_f, BiomBatchDataset
 )
-from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE
+from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
 from catvae.composition import (ilr_inv, alr_basis,
                                 ilr_basis, identity_basis)
 from catvae.metrics import (
@@ -331,22 +331,6 @@ class LightningCatVAE(LightningVAE):
         counts = batch.to(self.device)
         self.model.reset(counts)
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        self.model.train()
-        counts = batch.to(self.device)
-        loss = self.model(counts)
-        assert torch.isnan(loss).item() is False
-        if len(self.trainer.lr_schedulers) >= 1:
-            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-            current_lr = lr
-        else:
-            current_lr = self.hparams.learning_rate
-        tensorboard_logs = {
-            'train_loss': loss, 'elbo': -loss, 'lr': current_lr
-        }
-        # log the learning rate
-        return {'loss': loss, 'log': tensorboard_logs}
-
 
 class LightningLinearVAE(LightningVAE):
     def __init__(self, args):
@@ -376,7 +360,7 @@ class LightningBatchVAE(LightningVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-    def _dataloader(self, biom_file):
+    def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
         self.metadata = pd.read_table(
             self.hparams.sample_metadata, dtype=str)
@@ -391,7 +375,7 @@ class LightningBatchVAE(LightningVAE):
             batch_category=self.hparams.batch_category)
         _dataloader = DataLoader(
             _dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_batch_f, shuffle=True,
+            collate_fn=collate_batch_f, shuffle=shuffle,
             num_workers=self.hparams.num_workers, drop_last=True,
             pin_memory=True)
         return _dataloader
@@ -400,10 +384,45 @@ class LightningBatchVAE(LightningVAE):
         return self._dataloader(self.hparams.train_biom)
 
     def val_dataloader(self):
-        return self._dataloader(self.hparams.val_biom)
+        return self._dataloader(self.hparams.val_biom, shuffle=False)
 
     def test_dataloader(self):
-        return self._dataloader(self.hparams.test_biom)
+        return self._dataloader(self.hparams.test_biom, shuffle=False)
+
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        self.model.train()
+        counts, batch_effect = batch
+        counts = counts.to(self.device)
+        batch_effect = batch_effect.to(self.device)
+        loss = self.model(counts, batch_effect)
+        assert torch.isnan(loss).item() is False
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams.learning_rate
+        tensorboard_logs = {
+            'train_loss': loss, 'elbo': -loss, 'lr': current_lr
+        }
+        # log the learning rate
+        return {'loss': loss, 'log': tensorboard_logs}
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            counts, batch_effect = batch
+            counts = counts.to(self.device)
+            batch_effect = batch_effect.to(self.device)
+            loss = self.model(counts, batch_effect)
+            assert torch.isnan(loss).item() is False
+
+            # Record the actual loss.
+            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
+            tensorboard_logs = {'validation_loss': loss,
+                                'val_rec_err': rec_err}
+
+            # log the learning rate
+            return {'validation_loss': loss, 'log': tensorboard_logs}
+
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
@@ -447,7 +466,27 @@ class LightningBatchCatVAE(LightningBatchVAE, LightningCatVAE):
         counts = counts.to(self.device)
         self.model.reset(counts)
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+
+class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
+    def __init__(self, args):
+        LightningBatchVAE.__init__(self, args)
+        LightningLinearVAE.__init__(self, args)
+        self.hparams = args
+        table = load_table(self.hparams.train_biom)
+        n_input = table.shape[0]
+        basis = self.set_basis(n_input, table)
+        self.model = LinearBatchVAE(
+            n_input,
+            hidden_dim=self.hparams.n_latent,
+            basis=basis,
+            likelihood=self.hparams.likelihood,
+            encoder_depth=self.hparams.encoder_depth,
+            bias=self.hparams.bias
+        )
+        self.gt_eigvectors = None
+        self.gt_eigs = None
+
+    def training_step(self, batch, batch_idx):
         self.model.train()
         counts, batch_effect = batch
         counts = counts.to(self.device)
