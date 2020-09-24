@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 
 def main(args):
-    model = LightningLinearBatchVAE(args)
+    model = LightningLinearVAE(args)
     if (args.eigvectors is not None and
         args.eigvalues is not None):
         eigvectors = np.loadtxt(args.eigvectors)
@@ -47,8 +47,10 @@ if __name__ == '__main__':
     parser.add_argument('--gpus', type=int)
     parser.add_argument('--grad-clip', type=int, default=10)
     parser.add_argument('--eigvalues', type=str, default=None,
-                        help='Ground truth eigenvalues (optional)', required=False)
+                        help='Ground truth eigenvalues (optional)',
+                        required=False)
     parser.add_argument('--eigvectors', type=str, default=None,
-                        help='Ground truth eigenvectors (optional)', required=False)
+                        help='Ground truth eigenvectors (optional)',
+                        required=False)
     args = parser.parse_args()
     main(args)

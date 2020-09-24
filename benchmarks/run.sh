@@ -73,6 +73,7 @@ do
         --test-biom $SIM/test.biom \
         --val-biom $SIM/valid.biom \
         --epochs $epochs \
+        --bias False \
         --output-dir $OUT
 done
 
@@ -93,5 +94,6 @@ do
         --test-biom $SIM/test.biom \
         --val-biom $SIM/valid.biom \
         --epochs $epochs \
+        --bias False \
         --output-dir $OUT
 done

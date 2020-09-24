@@ -331,6 +331,10 @@ class LightningCatVAE(LightningVAE):
         counts = batch.to(self.device)
         self.model.reset(counts)
 
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        return super().training_step(batch, batch_idx)
+
+
 
 class LightningLinearVAE(LightningVAE):
     def __init__(self, args):
@@ -342,9 +346,8 @@ class LightningLinearVAE(LightningVAE):
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
         self.model = LinearVAE(
-            n_input,
+            n_input, basis=basis,
             hidden_dim=self.hparams.n_latent,
-            basis=basis,
             likelihood=self.hparams.likelihood,
             use_analytic_elbo=self.hparams.use_analytic_elbo,
             bias=self.hparams.bias)
@@ -392,7 +395,7 @@ class LightningBatchVAE(LightningVAE):
     def test_dataloader(self):
         return self._dataloader(self.hparams.test_biom, shuffle=False)
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx):
         self.model.train()
         counts, batch_effect = batch
         counts = counts.to(self.device)
@@ -469,6 +472,9 @@ class LightningBatchCatVAE(LightningBatchVAE, LightningCatVAE):
         counts = counts.to(self.device)
         self.model.reset(counts)
 
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        return super().training_step(batch, batch_idx)
+
 
 class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
     def __init__(self, args):
@@ -489,23 +495,6 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-    def training_step(self, batch, batch_idx):
-        self.model.train()
-        counts, batch_effect = batch
-        counts = counts.to(self.device)
-        batch_effect = batch_effect.to(self.device)
-        loss = self.model(counts, batch_effect)
-        assert torch.isnan(loss).item() is False
-        if len(self.trainer.lr_schedulers) >= 1:
-            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-            current_lr = lr
-        else:
-            current_lr = self.hparams.learning_rate
-        tensorboard_logs = {
-            'train_loss': loss, 'elbo': -loss, 'lr': current_lr
-        }
-        # log the learning rate
-        return {'loss': loss, 'log': tensorboard_logs}
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
