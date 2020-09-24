@@ -360,6 +360,9 @@ class LightningBatchVAE(LightningVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
+    def to_latent(self, X):
+        return self.model.encode(X)
+
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
         self.metadata = pd.read_table(

@@ -127,6 +127,15 @@ class LinearBatchCatVAE(LinearCatVAE):
             batch_size, bias
         )
 
+    def encode(self, x):
+        #B = B.sum(axis=0) + 1
+        #B = B.unsqueeze(0)
+        #batch_effects = (self.Psi @ B.t()).t()
+        hx = ilr(self.imputer(x), self.Psi)
+        #hx -= batch_effects  # Subtract out batch effects
+        z = self.encoder(hx)
+        return z
+
     def forward(self, x, B):
         hx = ilr(self.imputer(x), self.Psi)
         batch_effects = (self.Psi @ B.t()).t()
