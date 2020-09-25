@@ -6,8 +6,11 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR
 )
-from catvae.dataset.biom import collate_single_f, BiomDataset
-from catvae.models import LinearCatVAE, LinearVAE
+from catvae.dataset.biom import (
+    collate_single_f, BiomDataset,
+    collate_batch_f, BiomBatchDataset
+)
+from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
 from catvae.composition import (ilr_inv, alr_basis,
                                 ilr_basis, identity_basis)
 from catvae.metrics import (
@@ -18,6 +21,7 @@ from skbio import TreeNode
 from skbio.stats.composition import alr_inv, closure
 
 from biom import load_table
+import pandas as pd
 from scipy.stats import entropy
 from scipy.sparse import coo_matrix
 import numpy as np
@@ -31,6 +35,19 @@ class LightningVAE(pl.LightningModule):
         self.hparams = args
         self.gt_eigvectors = None
         self.gt_eigs = None
+
+    def set_basis(self, n_input, table):
+        # a sneak peek into file types to initialize model
+        if (self.hparams.basis is not None and
+            os.path.exists(self.hparams.basis)):
+            basis = ilr_basis(self.hparams.basis, table)
+        elif self.hparams.basis == 'alr':
+            basis = coo_matrix(alr_basis(n_input))
+        elif self.hparams.basis == 'identity':
+            basis = coo_matrix(identity_basis(n_input))
+        else:
+            basis = None
+        return basis
 
     def set_eigs(self, gt_eigvectors, gt_eigs):
         self.gt_eigvectors = gt_eigvectors
@@ -238,24 +255,15 @@ class LightningVAE(pl.LightningModule):
             help='Output directory of model results', required=True)
         return parser
 
+
 # Main VAE classes
 class LightningCatVAE(LightningVAE):
     def __init__(self, args):
         super(LightningCatVAE, self).__init__(args)
         self.hparams = args
-
-        # a sneak peek into file types to initialize model
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
-        if (self.hparams.basis is not None and
-            os.path.exists(self.hparams.basis)):
-            basis = ilr_basis(self.hparams.basis, table)
-        elif self.hparams.basis == 'alr':
-            basis = coo_matrix(alr_basis(n_input))
-        elif self.hparams.basis == 'identity':
-            basis = coo_matrix(identity_basis(n_input))
-        else:
-            basis = None
+        basis = self.set_basis(n_input, table)
 
         self.model = LinearCatVAE(
             n_input,
@@ -324,9 +332,75 @@ class LightningCatVAE(LightningVAE):
         self.model.reset(counts)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
+        return super().training_step(batch, batch_idx)
+
+
+
+class LightningLinearVAE(LightningVAE):
+    def __init__(self, args):
+        super(LightningLinearVAE, self).__init__(args)
+        self.hparams = args
+
+        # a sneak peek into file types to initialize model
+        table = load_table(self.hparams.train_biom)
+        n_input = table.shape[0]
+        basis = self.set_basis(n_input, table)
+        self.model = LinearVAE(
+            n_input, basis=basis,
+            hidden_dim=self.hparams.n_latent,
+            likelihood=self.hparams.likelihood,
+            use_analytic_elbo=self.hparams.use_analytic_elbo,
+            bias=self.hparams.bias)
+        self.gt_eigvectors = None
+        self.gt_eigs = None
+
+
+# Batch correction methods
+class LightningBatchVAE(LightningVAE):
+    def __init__(self, args):
+        super(LightningBatchVAE, self).__init__(args)
+        self.hparams = args
+        self.gt_eigvectors = None
+        self.gt_eigs = None
+
+    def to_latent(self, X):
+        return self.model.encode(X)
+
+    def _dataloader(self, biom_file, shuffle=True):
+        table = load_table(biom_file)
+        self.metadata = pd.read_table(
+            self.hparams.sample_metadata, dtype=str)
+        index_name = self.metadata.columns[0]
+        metadata = self.metadata.set_index(index_name)
+        batch_diffs = pd.read_table(self.hparams.batch_differentials)
+        index_name = batch_diffs.columns[0]
+        batch_diffs[index_name] = batch_diffs[index_name].astype(np.str)
+        batch_diffs = batch_diffs.set_index(index_name)
+        _dataset = BiomBatchDataset(
+            table, metadata, batch_diffs,
+            batch_category=self.hparams.batch_category)
+        _dataloader = DataLoader(
+            _dataset, batch_size=self.hparams.batch_size,
+            collate_fn=collate_batch_f, shuffle=shuffle,
+            num_workers=self.hparams.num_workers, drop_last=True,
+            pin_memory=True)
+        return _dataloader
+
+    def train_dataloader(self):
+        return self._dataloader(self.hparams.train_biom)
+
+    def val_dataloader(self):
+        return self._dataloader(self.hparams.val_biom, shuffle=False)
+
+    def test_dataloader(self):
+        return self._dataloader(self.hparams.test_biom, shuffle=False)
+
+    def training_step(self, batch, batch_idx):
         self.model.train()
-        counts = batch.to(self.device)
-        loss = self.model(counts)
+        counts, batch_effect = batch
+        counts = counts.to(self.device)
+        batch_effect = batch_effect.to(self.device)
+        loss = self.model(counts, batch_effect)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -339,34 +413,101 @@ class LightningCatVAE(LightningVAE):
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            counts, batch_effect = batch
+            counts = counts.to(self.device)
+            batch_effect = batch_effect.to(self.device)
+            loss = self.model(counts, batch_effect)
+            assert torch.isnan(loss).item() is False
 
-class LightningLinearVAE(LightningVAE):
+            # Record the actual loss.
+            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
+            tensorboard_logs = {'validation_loss': loss,
+                                'val_rec_err': rec_err}
+
+            # log the learning rate
+            return {'validation_loss': loss, 'log': tensorboard_logs}
+
+
+    @staticmethod
+    def add_model_specific_args(parent_parser, add_help=True):
+        parser = LightningVAE.add_model_specific_args(parent_parser)
+        parser.add_argument(
+            '--sample-metadata', help='Sample metadata file', required=False)
+        parser.add_argument(
+            '--batch-category',
+            help='Sample metadata column for batch effects.',
+            required=False, type=str, default=None)
+        parser.add_argument(
+            '--batch-differentials',
+            help=('Pre-learned batch effect variables '
+                  '(must have same number of dimensions as `train-biom`)'),
+            required=False, type=str, default=None)
+        return parser
+
+
+class LightningBatchCatVAE(LightningBatchVAE, LightningCatVAE):
     def __init__(self, args):
-        super(LightningLinearVAE, self).__init__(args)
+        LightningBatchVAE.__init__(self, args)
+        LightningCatVAE.__init__(self, args)
         self.hparams = args
-
-        # a sneak peek into file types to initialize model
-        n_input = load_table(self.hparams.train_biom).shape[0]
-
-        # a sneak peek into file types to initialize model
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
-        if (self.hparams.basis is not None and
-            os.path.exists(self.hparams.basis)):
-            basis = ilr_basis(self.hparams.basis, table)
-        elif self.hparams.basis == 'alr':
-            basis = coo_matrix(alr_basis(n_input))
-        elif self.hparams.basis == 'identity':
-            basis = coo_matrix(identity_basis(n_input))
-        else:
-            basis = None
+        basis = self.set_basis(n_input, table)
+        self.model = LinearBatchCatVAE(
+            n_input,
+            hidden_dim=self.hparams.n_latent,
+            basis=basis,
+            imputer=self.hparams.imputer,
+            encoder_depth=self.hparams.encoder_depth,
+            batch_size=self.hparams.batch_size,
+            bias=self.hparams.bias
+        )
+        self.gt_eigvectors = None
+        self.gt_eigs = None
 
-        self.model = LinearVAE(
+    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+        counts = batch[0]
+        counts = counts.to(self.device)
+        self.model.reset(counts)
+
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        return super().training_step(batch, batch_idx)
+
+
+class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
+    def __init__(self, args):
+        LightningBatchVAE.__init__(self, args)
+        LightningLinearVAE.__init__(self, args)
+        self.hparams = args
+        table = load_table(self.hparams.train_biom)
+        n_input = table.shape[0]
+        basis = self.set_basis(n_input, table)
+        self.model = LinearBatchVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
             likelihood=self.hparams.likelihood,
-            use_analytic_elbo=self.hparams.use_analytic_elbo,
-            bias=self.hparams.bias)
+            encoder_depth=self.hparams.encoder_depth,
+            bias=self.hparams.bias
+        )
         self.gt_eigvectors = None
         self.gt_eigs = None
+
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            counts, batch_effect = batch
+            counts = counts.to(self.device)
+            batch_effect = batch_effect.to(self.device)
+            loss = self.model(counts, batch_effect)
+            assert torch.isnan(loss).item() is False
+
+            # Record the actual loss.
+            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
+            tensorboard_logs = {'validation_loss': loss,
+                                'val_rec_err': rec_err}
+
+            # log the learning rate
+            return {'validation_loss': loss, 'log': tensorboard_logs}
