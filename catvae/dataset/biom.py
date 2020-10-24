@@ -5,6 +5,7 @@ import math
 import logging
 import numpy as np
 import pandas as pd
+from patsy import dmatrix
 import torch
 from torch.utils.data import Dataset
 from typing import List
@@ -204,6 +205,84 @@ class BiomBatchDataset(BiomDataset):
         return counts, batch_diffs
 
 
+class BiomConfounderDataset(BiomDataset):
+    """Loads a `.biom` file and subtracts out confounders.
+
+    Parameters
+    ----------
+    filename : Path
+        Filepath to biom table
+    metadata_file : Path
+        Filepath to sample metadata
+    differentials : str
+        Pre-trained differentials for confounders
+    formula : str
+        The formula used to obtain the differentials.
+
+    Notes
+    -----
+    Important, periods cannot be handled in the labels
+    in the formula. Make sure that these are converted to
+    hyphens or underscores.
+    """
+    def __init__(
+            self,
+            table: biom.Table,
+            metadata: pd.DataFrame,
+            differentials : pd.DataFrame,
+            formula: str,
+            format_columns=True,
+    ):
+        super(BiomConfounderDataset).__init__()
+        self.table = table
+        self.metadata = metadata
+        self.batch_differentials = differentials
+        self.formula = formula
+        self.populate()
+
+    def populate(self):
+        logger.info("Preprocessing dataset")
+        # Match the metadata with the table
+        ids = set(self.table.ids()) & set(self.metadata.index)
+        filter_f = lambda v, i, m: i in ids
+        self.table = self.table.filter(filter_f, axis='sample')
+        self.metadata = self.metadata.loc[self.table.ids()]
+        if self.metadata.index.name is None:
+            raise ValueError('`Index` must have a name either'
+                             '`sampleid`, `sample-id` or #SampleID')
+        self.index_name = self.metadata.index.name
+        self.metadata = self.metadata.reset_index()
+        self.design = dmatrix(self.formula, self.metadata,
+                              return_type='dataframe')
+        if any(self.design.columns != self.batch_differentials.columns):
+            raise ValueError('The formula `{self.formula}` is incorrect.')
+
+        # Clean up batch differentials
+        table_features = set(self.table.ids(axis='observation'))
+        batch_features = set(self.batch_differentials.index)
+        ids = table_features & batch_features
+        filter_f = lambda v, i, m: i in ids
+        self.table = self.table.filter(filter_f, axis='observation')
+        table_obs = self.table.ids(axis='observation')
+        self.batch_differentials = self.batch_differentials.loc[table_obs]
+        logger.info("Finished preprocessing dataset")
+
+    def __getitem__(self, i):
+        """ Returns all of the samples for a given subject.
+
+        Returns
+        -------
+        counts : np.array
+            OTU counts for specified samples.
+        batch_indices : np.array
+            Membership ids for batch samples.
+        """
+        sample_idx = self.table.ids()[i]
+        diffs = self.design[i] @ self.differentials
+        counts = self.table.data(id=sample_idx, axis='sample')
+        return counts, diffs
+
+
 def collate_single_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     counts = torch.from_numpy(counts_list).float()
@@ -211,6 +290,14 @@ def collate_single_f(batch):
 
 
 def collate_batch_f(batch):
+    counts_list = np.vstack([b[0] for b in batch])
+    batch_diffs = np.vstack([b[1] for b in batch])
+    counts = torch.from_numpy(counts_list).float()
+    batch_diffs = torch.from_numpy(batch_diffs).float()
+    return counts, batch_diffs
+
+
+def collate_confounders_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     batch_diffs = np.vstack([b[1] for b in batch])
     counts = torch.from_numpy(counts_list).float()

@@ -37,7 +37,6 @@ class LightningVAE(pl.LightningModule):
         self.gt_eigs = None
 
     def set_basis(self, n_input, table):
-        # a sneak peek into file types to initialize model
         if (self.hparams.basis is not None and
             os.path.exists(self.hparams.basis)):
             basis = ilr_basis(self.hparams.basis, table)
@@ -261,6 +260,7 @@ class LightningCatVAE(LightningVAE):
     def __init__(self, args):
         super(LightningCatVAE, self).__init__(args)
         self.hparams = args
+        # in case we want to load from a checkpoint
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
@@ -340,7 +340,7 @@ class LightningLinearVAE(LightningVAE):
     def __init__(self, args):
         super(LightningLinearVAE, self).__init__(args)
         self.hparams = args
-
+        # in case we want to load from a checkpoint
         # a sneak peek into file types to initialize model
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
