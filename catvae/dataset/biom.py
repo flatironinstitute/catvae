@@ -295,11 +295,3 @@ def collate_batch_f(batch):
     counts = torch.from_numpy(counts_list).float()
     batch_diffs = torch.from_numpy(batch_diffs).float()
     return counts, batch_diffs
-
-
-def collate_confounders_f(batch):
-    counts_list = np.vstack([b[0] for b in batch])
-    batch_diffs = np.vstack([b[1] for b in batch])
-    counts = torch.from_numpy(counts_list).float()
-    batch_diffs = torch.from_numpy(batch_diffs).float()
-    return counts, batch_diffs
