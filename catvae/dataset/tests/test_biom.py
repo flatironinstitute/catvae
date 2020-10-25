@@ -3,7 +3,8 @@ from skbio.util import get_data_path
 from biom import load_table
 import pandas as pd
 import numpy as np
-from catvae.dataset.biom import BiomDataset, BiomBatchDataset
+from catvae.dataset.biom import (
+    BiomDataset, BiomBatchDataset, BiomConfounderDataset)
 import numpy.testing as npt
 
 
@@ -77,6 +78,29 @@ class TestBiomBatchDataset(unittest.TestCase):
 
         npt.assert_allclose(batch[0], exp_sample)
         npt.assert_allclose(batch[1], exp_batch_diff)
+
+
+class TestBiomConfounderDataset(unittest.TestCase):
+
+    def setUp(self):
+        self.table = load_table(get_data_path('table2.biom'))
+        self.metadata = pd.read_table(
+            get_data_path('metadata.txt'))
+        self.metadata = self.metadata.set_index('sampleid')
+        batch_diffs = pd.read_table(
+            get_data_path('confounders.txt'))
+        batch_diffs['featureid'] = batch_diffs['featureid'].astype(np.str)
+        self.batch_differentials = batch_diffs.set_index('featureid')
+
+
+    def test_populate(self):
+        formula = 'C(treatment) + C(batch) + C(subject) + time'
+        data = BiomConfounderDataset(self.table, self.metadata,
+                                     self.batch_differentials,
+                                     formula=formula)
+        self.assertEqual(data.table.shape, (50, 20))
+        self.assertEqual(data.metadata.shape, (20, 5))
+        self.assertEqual(data.batch_differentials.shape, (50, 7))
 
 
 if __name__ == '__main__':

@@ -65,18 +65,21 @@ class LinearVAE(nn.Module):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
         # return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
 
-    def recon_model_loglik(self, x_in, x_out):
+    def recon_model_loglik(self, x, eta):
         # WARNING : the gaussian likelidhood is not supported
         if self.likelihood == 'gaussian':
-            x_in = self.Psi.t() @ torch.log(x_in + 1).t()
-            diff = (x_in - x_out) ** 2
+            x_in = self.Psi.t() @ torch.log(x + 1).t()
+            diff = (x - eta) ** 2
             sigma_sq = torch.exp(self.log_sigma_sq)
             # No dimension constant as we sum after
             return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
         elif self.likelihood == 'multinomial':
-            logp = (self.Psi.t() @ x_out.t()).t()
-            mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
+            logp = (self.Psi.t() @ eta.t()).t()
+            mult_loss = Multinomial(logits=logp).log_prob(x).mean()
             return mult_loss
+        else:
+            raise ValueError(
+                f'{self.likelihood} has not be properly specified.')
 
     def analytic_exp_recon_loss(self, x):
         z_logvar = self.variational_logvars
@@ -88,11 +91,8 @@ class LinearVAE(nn.Module):
         wv = torch.mm(self.decoder.weight, self.encoder.weight)
         vtwtwv = wv.t().mm(wv)
         xtvtwtwvx = (x * torch.mm(x, vtwtwv)).mean(0).sum()
-
         xtwvx = 2.0 * (x * x.mm(wv)).mean(0).sum()
-
         xtx = (x * x).mean(0).sum()
-
         exp_recon_loss = -(
             tr_wdw + xtvtwtwvx - xtwvx + xtx) / (
                 2.0 * torch.exp(self.log_sigma_sq)) - x.shape[-1] * (
@@ -189,10 +189,7 @@ class LinearBatchVAE(LinearVAE):
         batch_effects = (self.Psi @ B.t()).t()
         hx -= batch_effects  # Subtract out batch effects
         z_mean = self.encoder(hx)
-        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
-        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
-        x_out = self.decoder(z_sample)
-        x_out += batch_effects  # Add batch effects back in
-
-        recon_loss = -self.recon_model_loglik(x, x_out)
+        eta = self.decoder(z_mean)
+        eta += batch_effects  # Add batch effects back in
+        recon_loss = -self.recon_model_loglik(x, eta)
         return recon_loss
