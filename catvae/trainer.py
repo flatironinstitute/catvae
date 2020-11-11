@@ -526,17 +526,17 @@ class LightningConfounderVAE(LightningVAE):
 
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
-        self.metadata = pd.read_table(
-            self.hparams.sample_metadata, dtype=str)
-        index_name = self.metadata.columns[0]
-        metadata = self.metadata.set_index(index_name)
-        batch_diffs = pd.read_table(self.hparams.batch_differentials)
+        metadata = pd.read_table(
+            self.hparams.sample_metadata, index_col=0)
+        #index_name = self.metadata.columns[0]
+        #metadata = self.metadata.set_index(index_name)
+        batch_diffs = pd.read_table(self.hparams.differentials)
         index_name = batch_diffs.columns[0]
         batch_diffs[index_name] = batch_diffs[index_name].astype(np.str)
         batch_diffs = batch_diffs.set_index(index_name)
         _dataset = BiomConfounderDataset(
             table, metadata, batch_diffs,
-            formula=formula)
+            formula=self.hparams.formula)
         _dataloader = DataLoader(
             _dataset, batch_size=self.hparams.batch_size,
             collate_fn=collate_batch_f, shuffle=shuffle,

@@ -51,7 +51,6 @@ class BiomDataset(Dataset):
                 raise ValueError('`Index` must have a name either'
                                  '`sampleid`, `sample-id` or #SampleID')
             self.index_name = self.metadata.index.name
-
             self.metadata = self.metadata.reset_index()
 
         self.batch_indices = None
@@ -236,7 +235,7 @@ class BiomConfounderDataset(BiomDataset):
         super(BiomConfounderDataset).__init__()
         self.table = table
         self.metadata = metadata
-        self.batch_differentials = differentials
+        self.batch_diffs = differentials
         self.formula = formula
         self.populate()
 
@@ -246,25 +245,43 @@ class BiomConfounderDataset(BiomDataset):
         ids = set(self.table.ids()) & set(self.metadata.index)
         filter_f = lambda v, i, m: i in ids
         self.table = self.table.filter(filter_f, axis='sample')
-        self.metadata = self.metadata.loc[self.table.ids()]
+        obs = self.table.ids(axis='observation')
+        obs = set(obs) & set(self.batch_diffs.index)
+        filter_f = lambda v, i, m: i in obs
+        self.table = self.table.filter(filter_f, axis='observation')
+        self.batch_diffs = self.batch_diffs.loc[obs]
         if self.metadata.index.name is None:
             raise ValueError('`Index` must have a name either'
                              '`sampleid`, `sample-id` or #SampleID')
         self.index_name = self.metadata.index.name
-        self.metadata = self.metadata.reset_index()
+        #self.metadata = self.metadata.reset_index()
         self.design = dmatrix(self.formula, self.metadata,
                               return_type='dataframe')
-        if any(self.design.columns != self.batch_differentials.columns):
-            raise ValueError('The formula `{self.formula}` is incorrect.')
+        try:
+            cols = list(
+                set(self.design.columns) & set(self.batch_diffs.columns))
+            self.batch_diffs = self.batch_diffs[cols]
+            self.design = self.design[cols]
+        except Exception as e:
+            if len(self.design.columns) != len(self.batch_diffs.columns):
+                raise ValueError(
+                    f'Dimensions {len(self.design.columns)} and '
+                    f'{len(self.batch_diffs.columns)} '
+                    'do not match.')
+            if any(self.design.columns != self.batch_diffs.columns):
+                raise ValueError(
+                    f'The formula `{self.formula}` is incorrect. '
+                )
+            raise e
 
         # Clean up batch differentials
         table_features = set(self.table.ids(axis='observation'))
-        batch_features = set(self.batch_differentials.index)
+        batch_features = set(self.batch_diffs.index)
         ids = table_features & batch_features
         filter_f = lambda v, i, m: i in ids
         self.table = self.table.filter(filter_f, axis='observation')
         table_obs = self.table.ids(axis='observation')
-        self.batch_differentials = self.batch_differentials.loc[table_obs]
+        self.batch_diffs = self.batch_diffs.loc[table_obs]
         logger.info("Finished preprocessing dataset")
 
     def __getitem__(self, i):
@@ -278,7 +295,7 @@ class BiomConfounderDataset(BiomDataset):
             Membership ids for batch samples.
         """
         sample_idx = self.table.ids()[i]
-        diffs = self.design[i] @ self.differentials
+        diffs = self.design.loc[sample_idx] @ self.batch_diffs.T
         counts = self.table.data(id=sample_idx, axis='sample')
         return counts, diffs
 
