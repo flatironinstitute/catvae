@@ -1,3 +1,4 @@
+import os
 import torch
 import pystan
 import numpy as np
@@ -47,11 +48,11 @@ model {
 def main(args):
     if args.model == 'catvae':
         model = LightningCatVAE(args)
-    elif args.model == 'linear-ae':
+    elif args.model == 'linear-vae':
         model = LightningLinearVAE(args)
     else:
         raise ValueError(f'{args.model} is not supported')
-
+    print(model)
     checkpoint = torch.load(
         args.torch_ckpt,
         map_location=lambda storage, loc: storage)
@@ -60,8 +61,14 @@ def main(args):
     if args.stan_model is None:
         sm = pystan.StanModel(model_code=model_code)
     else:
-        # load compiled model from pickle
-        sm = pickle.load(open('model.pkl', 'rb'))
+        if os.path.exists(args.stan_model):
+            # load compiled model from pickle
+            sm = pickle.load(open(args.stan_model, 'rb'))
+        else:
+            sm = pystan.StanModel(model_code=model_code)
+            with open(args.stan_model, 'wb') as f:
+                pickle.dump(sm, f)
+
     W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
     # b = model.model.decoder.bias.detach().cpu().numpy().squeeze()
     sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())

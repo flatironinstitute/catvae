@@ -68,6 +68,13 @@ def metric_alignment(model, gt_eigvectors):
     """
     #decoder_weight = get_weight_tensor_from_seq(model.decoder)
     decoder_np = model.decoder.weight.cpu().numpy()[:gt_eigvectors.shape[0], :]
+
+    # if correction:
+    #     C = model.Psi.to_dense()
+    #     A = torch.svd(model.encode(C))[1].cpu()
+    #     A = torch.diag(A).detach().numpy()
+    #     decoder_np = decoder_np @ A
+
     # normalize columns of gt_eigvectors
     norm_gt_eigvectors = gt_eigvectors / np.linalg.norm(gt_eigvectors, axis=0)
     # normalize columns of decoder
@@ -82,9 +89,14 @@ def metric_alignment(model, gt_eigvectors):
 
 
 def metric_subspace(model, gt_eigvectors, gt_eigs):
-    #decoder_weight = get_weight_tensor_from_seq(model.decoder)
-    # decoder_np = model.get_loadings(decoder=True)
     decoder_np = model.decoder.weight.cpu().numpy()[:gt_eigvectors.shape[0], :]
+
+    # if correction:
+    #     C = model.Psi.to_dense()
+    #     A = torch.svd(model.encode(C))[1].cpu()
+    #     A = torch.diag(A).detach().numpy()
+    #     decoder_np = decoder_np @ A
+
     # k - tr(UU^T WW^T), where W is left singular vector matrix of decoder
     u, s, vh = np.linalg.svd(decoder_np, full_matrices=False)
     return 1 - np.trace(gt_eigvectors @ gt_eigvectors.T @ u @ u.T) / float(model.hidden_dim)
