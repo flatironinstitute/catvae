@@ -1,6 +1,8 @@
+import torch
 import pystan
 import numpy as np
 import pandas as pd
+import argparse
 import matplotlib.pyplot as plt
 from catvae.trainer import LightningCatVAE
 import pickle
@@ -64,7 +66,7 @@ def main(args):
     # b = model.model.decoder.bias.detach().cpu().numpy().squeeze()
     sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
     epochs = args.iterations // args.checkpoint_interval
-    table = load_table(args.train_biom))
+    table = load_table(args.train_biom)
     N, D, K = table.shape[1], table.shape[0], args.n_latent
     psi = self.set_basis(N, table)
     Y = np.array(table.matrix_data.todense()).T
@@ -93,7 +95,5 @@ if __name__ == '__main__':
                         help='Number of iterations.')
     parser.add_argument('--chains', type=int, default=4, required=False,
                         help='Number of MCMC chains to run in Stan')
-    parser.add_argument('--output-dir', type=str, required=True,
-                        help='Output directory to store Stan results.')
     args = parser.parse_args()
     main(args)
