@@ -1,6 +1,9 @@
+import os
+import torch
 import pystan
 import numpy as np
 import pandas as pd
+import argparse
 import matplotlib.pyplot as plt
 from catvae.trainer import LightningCatVAE
 import pickle
@@ -45,11 +48,11 @@ model {
 def main(args):
     if args.model == 'catvae':
         model = LightningCatVAE(args)
-    elif args.model == 'linear-ae':
+    elif args.model == 'linear-vae':
         model = LightningLinearVAE(args)
     else:
         raise ValueError(f'{args.model} is not supported')
-
+    print(model)
     checkpoint = torch.load(
         args.torch_ckpt,
         map_location=lambda storage, loc: storage)
@@ -58,13 +61,19 @@ def main(args):
     if args.stan_model is None:
         sm = pystan.StanModel(model_code=model_code)
     else:
-        # load compiled model from pickle
-        sm = pickle.load(open('model.pkl', 'rb'))
+        if os.path.exists(args.stan_model):
+            # load compiled model from pickle
+            sm = pickle.load(open(args.stan_model, 'rb'))
+        else:
+            sm = pystan.StanModel(model_code=model_code)
+            with open(args.stan_model, 'wb') as f:
+                pickle.dump(sm, f)
+
     W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
     # b = model.model.decoder.bias.detach().cpu().numpy().squeeze()
     sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
     epochs = args.iterations // args.checkpoint_interval
-    table = load_table(args.train_biom))
+    table = load_table(args.train_biom)
     N, D, K = table.shape[1], table.shape[0], args.n_latent
     psi = self.set_basis(N, table)
     Y = np.array(table.matrix_data.todense()).T
@@ -93,7 +102,5 @@ if __name__ == '__main__':
                         help='Number of iterations.')
     parser.add_argument('--chains', type=int, default=4, required=False,
                         help='Number of MCMC chains to run in Stan')
-    parser.add_argument('--output-dir', type=str, required=True,
-                        help='Output directory to store Stan results.')
     args = parser.parse_args()
     main(args)
