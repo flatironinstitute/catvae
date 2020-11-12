@@ -5,8 +5,9 @@ import numpy as np
 import pandas as pd
 import argparse
 import matplotlib.pyplot as plt
-from catvae.trainer import LightningCatVAE
+from catvae.trainer import LightningCatVAE, LightningLinearVAE
 import pickle
+from biom import load_table
 
 
 model_code = """
@@ -75,8 +76,8 @@ def main(args):
     epochs = args.iterations // args.checkpoint_interval
     table = load_table(args.train_biom)
     N, D, K = table.shape[1], table.shape[0], args.n_latent
-    psi = self.set_basis(N, table)
-    Y = np.array(table.matrix_data.todense()).T
+    psi = np.array(model.set_basis(N, table).todense())
+    Y = np.array(table.matrix_data.todense()).T.astype(np.int64)
     fit_data = {'N': N, 'D': D, 'K': K, 'Psi': psi, 'y': Y}
     init = [{'W': W, 'sigma': sigma}] * args.chains
     fit = sm.sampling(data=fit_data, iter=args.iterations,
