@@ -80,11 +80,21 @@ def main(args):
     Y = np.array(table.matrix_data.todense()).T.astype(np.int64)
     fit_data = {'N': N, 'D': D, 'K': K, 'Psi': psi, 'y': Y}
     init = [{'W': W, 'sigma': sigma}] * args.chains
-    fit = sm.sampling(data=fit_data, iter=args.iterations,
-                      chains=args.chains, init=init)
-    la = fit.extract(permuted=True)  # return a dictionary of arrays
-    with open(f'{args.output_dir}/results.pkl', 'wb') as f:
-        pickle.dump(la, f)
+    if args.mode == 'hmc':
+        fit = sm.sampling(data=fit_data, iter=args.iterations,
+                          chains=args.chains, init=init)
+        print('Sampling from posterior distribution')
+        la = fit.extract(permuted=False, pars=['W', 'sigma'])  # return a dictionary of arrays
+        print('Saving file')
+        with open(f'{args.output_directory}/hmc-results.pkl', 'wb') as f:
+            pickle.dump(la, f)
+    elif args.mode == 'mle':
+        la = sm.optimizing(data=fit_data, iter=args.iterations,
+                           init=init)
+        with open(f'{args.output_directory}/mle-results.pkl', 'wb') as f:
+            pickle.dump(la, f)
+    else:
+        raise ValueError(f'{args.mode} not implemented.')
 
 
 if __name__ == '__main__':
@@ -101,6 +111,9 @@ if __name__ == '__main__':
     parser.add_argument('--iterations', type=int,
                         default=1000, required=False,
                         help='Number of iterations.')
+    parser.add_argument('--mode', type=str,
+                        default='hmc', required=False,
+                        help='Specifies either `hmc` or `mle`.')
     parser.add_argument('--chains', type=int, default=4, required=False,
                         help='Number of MCMC chains to run in Stan')
     args = parser.parse_args()
