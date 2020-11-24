@@ -217,9 +217,8 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--n-latent', help='Latent embedding dimension.',
             required=False, type=int, default=10)
-        parser.add_argument(
-            '--bias', help='Use bias.',
-            required=False, type=bool, default=False)
+        parser.add_argument('--bias', dest='bias', action='store_true')
+        parser.add_argument('--no-bias', dest='bias', action='store_false')
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
