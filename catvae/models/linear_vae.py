@@ -14,6 +14,10 @@ import numpy as np
 LOG_2_PI = np.log(2.0 * np.pi)
 
 
+def reparameterize_gaussian(mu, var, n_samples):
+    return Normal(mu, var.sqrt()).rsample(n_samples)
+
+
 class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
@@ -82,6 +86,13 @@ class LinearVAE(nn.Module):
         hx = ilr(self.imputer(x), self.Psi)
         z = self.encoder(hx)
         return z
+
+    def sample_from_posterior_z(self, x):
+        x_ = ilr(self.imputer(x), self.Psi)
+        z_mean = self.encoder(x_)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
 
     def forward(self, x):
         x_ = ilr(self.imputer(x), self.Psi)
