@@ -12,6 +12,10 @@ from typing import Callable
 LOG_2_PI = np.log(2.0 * np.pi)
 
 
+def reparameterize_gaussian(mu, var, n_samples):
+    return Normal(mu, var.sqrt()).rsample(n_samples)
+
+
 class LinearCatVAE(nn.Module):
 
     def __init__(self, input_dim : int, hidden_dim : int,
@@ -84,6 +88,12 @@ class LinearCatVAE(nn.Module):
         hx = ilr(self.imputer(x), self.Psi)
         z = self.encoder(hx)
         return z
+
+    def sample_from_posterior_z(self, x, n_samples=1):
+        hx = ilr(self.imputer(x), self.Psi)
+        z = self.encoder(hx)
+        var = np.exp(self.variational_logvars)
+        return reparameterize_gaussian(mu, var, n_samples)
 
     def forward(self, x):
         hx = ilr(self.imputer(x), self.Psi)
