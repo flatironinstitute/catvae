@@ -46,6 +46,8 @@ class LinearCatVAE(nn.Module):
         self.input_dim = Psi.shape[0]
         if imputer is None:
             self.imputer = lambda x: x + 1
+        else:
+            self.imputer = imputer
 
         if encoder_depth > 1:
             self.first_encoder = nn.Linear(
@@ -99,6 +101,8 @@ class LinearCatVAE(nn.Module):
         logit_loss = qdist.log_prob(self.eta).mean()
         mult_loss = Multinomial(logits=logp.t()).log_prob(x).mean()
         loglike = mult_loss + logit_loss + prior_loss
+
+        #print(x.mean(), z_mean.mean(), loglike)
         return -loglike
 
     def reset(self, x):

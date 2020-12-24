@@ -263,12 +263,13 @@ class LightningCatVAE(LightningVAE):
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
-
+        imputer = lambda x: x + 1
         self.model = LinearCatVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
-            imputer=self.hparams.imputer,
+            #imputer=self.hparams.imputer,
+            imputer=None,
             encoder_depth=self.hparams.encoder_depth,
             batch_size=self.hparams.batch_size,
             bias=self.hparams.bias

@@ -300,7 +300,7 @@ class MultivariateNormalFactorIdentity(Distribution):
         self.D = D
         self.W = W
         self.d = d
-        self.Id = sparse_identity(self.d).to(self.mu.device)
+        #self.Id = sparse_identity(self.d).to(self.mu.device)
         batch_shape, event_shape = self.mu.shape[:-1], self.mu.shape[-1:]
         super(MultivariateNormalFactorIdentity, self).__init__(
             batch_shape, event_shape, validate_args=validate_args)
@@ -309,8 +309,10 @@ class MultivariateNormalFactorIdentity(Distribution):
     def covariance_matrix(self):
         wdw = self.W @ torch.diag(self.D) @ self.W.t()
         #Id = torch.eye(self.d).to(self.mu.device)
-        s2 = self.Id * self.sigma2
-        return wdw + s2
+        #s2 = self.Id * self.sigma2
+        idx = torch.arange(self.d)
+        wdw[idx, idx] +=self.sigma2
+        return wdw
 
     @property
     def precision_matrix(self):
@@ -370,7 +372,7 @@ class MultivariateNormalFactorIdentity(Distribution):
         if self._validate_args:
             self._validate_sample(value)
         diff = value - self.mu
-        L = self.W @ torch.diag(torch.sqrt(self.D))
+        # L = self.W @ torch.diag(torch.sqrt(self.D))
         M = _batch_mahalanobis_factor(self.precision_matrix, diff)
         p = - 0.5 * self.log_det - 0.5 * (
             self._event_shape[0] * math.log(2 * math.pi) + M
