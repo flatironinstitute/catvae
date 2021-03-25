@@ -130,7 +130,6 @@ class BiomBatchDataset(BiomDataset):
             self,
             table: biom.Table,
             metadata: pd.DataFrame,
-            batch_differentials : pd.DataFrame,
             batch_category: str,
             format_columns=True,
     ):
@@ -138,7 +137,6 @@ class BiomBatchDataset(BiomDataset):
         self.table = table
         self.metadata = metadata
         self.batch_category = batch_category
-        self.batch_differentials = batch_differentials
         self.format_columns = format_columns
         self.populate()
 
@@ -182,7 +180,6 @@ class BiomBatchDataset(BiomDataset):
         filter_f = lambda v, i, m: i in ids
         self.table = self.table.filter(filter_f, axis='observation')
         table_obs = self.table.ids(axis='observation')
-        self.batch_differentials = self.batch_differentials.loc[table_obs]
         logger.info("Finished preprocessing dataset")
 
     def __getitem__(self, i):
@@ -198,10 +195,7 @@ class BiomBatchDataset(BiomDataset):
         sample_idx = self.table.ids()[i]
         batch_index = self.batch_indices[i]
         counts = self.table.data(id=sample_idx, axis='sample')
-        batch_diffs = self.batch_differentials
-        assert batch_index < batch_diffs.shape[1], f'Batch diffs " {batch_diffs.shape[1]} > index : {batch_index}'
-        batch_diffs = np.array(batch_diffs.iloc[:, batch_index].values)
-        return counts, batch_diffs
+        return counts, batch_index
 
 
 def collate_single_f(batch):
@@ -212,7 +206,7 @@ def collate_single_f(batch):
 
 def collate_batch_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
-    batch_diffs = np.vstack([b[1] for b in batch])
+    batch_ids = np.vstack([b[1] for b in batch])
     counts = torch.from_numpy(counts_list).float()
-    batch_diffs = torch.from_numpy(batch_diffs).float()
+    batch_ids = torch.from_numpy(batch_ids).long()
     return counts, batch_diffs

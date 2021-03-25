@@ -85,7 +85,9 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
     z = np.random.normal(size=(total, hdims))
     eta = np.random.normal(np.matmul(z, W.T), sigma).astype(np.float32)
     # add batch effects
-    B = np.random.normal(size=(D - 1, C))
+    alpha = np.abs(np.random.normal(0, 3, size=(D - 1)))
+    m = np.zeros(D - 1)
+    B = np.random.multivariate_normal(m, np.diag(alpha), size=C)
     batch_idx = np.random.randint(C, size=N)
     eta = np.vstack([eta[i] + B[:, batch_idx[i]] for i in range(N)])
     # Convert latent variables to observed counts
@@ -103,6 +105,7 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
         eta=eta,
         z=z,
         Y=Y,
+        alpha=alpha,
         B=B,
         batch_idx=batch_idx,
         depths=depths,

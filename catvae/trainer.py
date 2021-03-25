@@ -236,9 +236,6 @@ class LightningVAE(pl.LightningModule):
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
         parser.add_argument(
-            '--likelihood', help='Likelihood distribution (gaussian or multinomial).',
-            required=False, type=str, default=True)
-        parser.add_argument(
             '--imputer', help='Imputation technique to use.',
             required=False, type=bool, default=None)
         parser.add_argument(
@@ -348,7 +345,6 @@ class LightningLinearVAE(LightningVAE):
         self.model = LinearVAE(
             n_input, basis=basis,
             hidden_dim=self.hparams.n_latent,
-            likelihood=self.hparams.likelihood,
             use_analytic_elbo=self.hparams.use_analytic_elbo,
             bias=self.hparams.bias)
         self.gt_eigvectors = None
@@ -397,10 +393,10 @@ class LightningBatchVAE(LightningVAE):
 
     def training_step(self, batch, batch_idx):
         self.model.train()
-        counts, batch_effect = batch
+        counts, batch_ids = batch
         counts = counts.to(self.device)
-        batch_effect = batch_effect.to(self.device)
-        loss = self.model(counts, batch_effect)
+        batch_ids = batch_ids.to(self.device)
+        loss = self.model(counts, batch_ids)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -440,8 +436,8 @@ class LightningBatchVAE(LightningVAE):
             help='Sample metadata column for batch effects.',
             required=False, type=str, default=None)
         parser.add_argument(
-            '--batch-differentials',
-            help=('Pre-learned batch effect variables '
+            '--batch-priors',
+            help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=False, type=str, default=None)
         return parser
@@ -488,7 +484,6 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
-            likelihood=self.hparams.likelihood,
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias
         )

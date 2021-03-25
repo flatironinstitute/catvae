@@ -10,6 +10,7 @@ from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
 from torch.distributions import Multinomial
 import numpy as np
+import geotorch
 
 LOG_2_PI = np.log(2.0 * np.pi)
 
@@ -18,11 +19,10 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
                  use_analytic_elbo=True, encoder_depth=1,
-                 likelihood='gaussian', basis=None, bias=False):
+                 basis=None, bias=False):
         super(LinearVAE, self).__init__()
         self.bias = bias
         self.hidden_dim = hidden_dim
-        self.likelihood = likelihood
         self.use_analytic_elbo = use_analytic_elbo
 
         if basis is None:
@@ -32,6 +32,7 @@ class LinearVAE(nn.Module):
         Psi = torch.sparse_coo_tensor(
             indices.copy(), basis.data.astype(np.float32).copy(),
             requires_grad=False)
+        # note this line corresponds to the true input dim
         self.input_dim = Psi.shape[0]
         self.register_buffer('Psi', Psi)
 
@@ -57,26 +58,18 @@ class LinearVAE(nn.Module):
             self.encoder.weight.data.normal_(0.0, init_scale)
 
         self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=self.bias)
+        geotorch.grassmannian(self.decoder, 'weight')
         self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
 
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
-        # return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
 
     def recon_model_loglik(self, x_in, x_out):
-        # WARNING : the gaussian likelidhood is not supported
-        if self.likelihood == 'gaussian':
-            x_in = self.Psi.t() @ torch.log(x_in + 1).t()
-            diff = (x_in - x_out) ** 2
-            sigma_sq = torch.exp(self.log_sigma_sq)
-            # No dimension constant as we sum after
-            return 0.5 * (-diff / sigma_sq - LOG_2_PI - self.log_sigma_sq)
-        elif self.likelihood == 'multinomial':
-            logp = (self.Psi.t() @ x_out.t()).t()
-            mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
-            return mult_loss
+        logp = (self.Psi.t() @ x_out.t()).t()
+        mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
+        return mult_loss
 
     def encode(self, x):
         hx = ilr(self.imputer(x), self.Psi)
@@ -106,30 +99,46 @@ class LinearVAE(nn.Module):
 
 
 class LinearBatchVAE(LinearVAE):
-    def __init__(self, input_dim, hidden_dim, init_scale=0.001,
-                 encoder_depth=1,
-                 likelihood='gaussian', basis=None, bias=False):
-        """ Only the stochastic version will be made available. """
+    def __init__(self, input_dim, hidden_dim, batch_dim, priors,
+                 init_scale=0.001, encoder_depth=1,
+                 basis=None, bias=False):
+        """ Account for batch effects.
+
+        Parameters
+        ----------
+        input_dim : int
+           Number of dimensions for input counts
+        hidden_dim : int
+           Number of hidden dimensions
+        batch_dim : int
+           Number of batches (i.e. studies) to do batch correction
+        batch_priors : np.array of float
+           Normal priors for batch effects
+        """
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, init_scale,
-            likelihood=likelihood,
             use_analytic_elbo=False,
             basis=basis, encoder_depth=encoder_depth,
             bias=bias)
+        self.batch_embed = nn.Embedding(batch_dim, input_dim - 1)
 
     def encode(self, x):
-        # B = B.sum(axis=0) + 1
-        # B = B.unsqueeze(0)
-        # batch_effects = (self.Psi @ B.t()).t()
         hx = ilr(self.imputer(x), self.Psi)
-        #hx -= batch_effects  # Subtract out batch effects
         z = self.encoder(hx)
         return z
 
-    def forward(self, x, B):
+    def forward(self, x, b):
+        """ Forward pass
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input counts of shape b x D
+        b : torch.Tensor
+            Batch indices of shape C
+        """
+        batch_effects = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
-        batch_effects = (self.Psi @ B.t()).t()
-        hx -= batch_effects  # Subtract out batch effects
         z_mean = self.encoder(hx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
@@ -141,15 +150,13 @@ class LinearBatchVAE(LinearVAE):
         loss = kl_div + recon_loss
         return loss
 
-    def get_reconstruction_loss(self, x, B):
+    def get_reconstruction_loss(self, x, b):
+        batch_effects = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
-        batch_effects = (self.Psi @ B.t()).t()
-        hx -= batch_effects  # Subtract out batch effects
         z_mean = self.encoder(hx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
         x_out += batch_effects  # Add batch effects back in
-
         recon_loss = -self.recon_model_loglik(x, x_out)
         return recon_loss
