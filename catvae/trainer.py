@@ -8,7 +8,7 @@ from torch.optim.lr_scheduler import (
 )
 from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
-    collate_batch_f, BiomBatchDataset
+    collate_batch_f
 )
 from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
 from catvae.composition import (ilr_inv, alr_basis,
@@ -345,11 +345,9 @@ class LightningLinearVAE(LightningVAE):
         self.model = LinearVAE(
             n_input, basis=basis,
             hidden_dim=self.hparams.n_latent,
-            use_analytic_elbo=self.hparams.use_analytic_elbo,
             bias=self.hparams.bias)
         self.gt_eigvectors = None
         self.gt_eigs = None
-
 
 # Batch correction methods
 class LightningBatchVAE(LightningVAE):
@@ -358,6 +356,18 @@ class LightningBatchVAE(LightningVAE):
         self.hparams = args
         self.gt_eigvectors = None
         self.gt_eigs = None
+        # we'll read in the metadata / table twice, whatever
+        # We may need to adjust this in the future.
+        table = load_table(self.hparams.train_biom)
+        batch_priors = pd.read_table(self.hparams.batch_priors, dtype=str)
+        batch_priors = batch_priors.set_index(batch_priors.columns[0])
+        batch_priors = batch_priors.loc[table.ids(axis='observation')]
+        batch_priors = batch_priors.values.astype(np.float64).reshape(1, -1)
+        self.batch_priors = torch.Tensor(batch_priors).float()
+        self.metadata = pd.read_table(
+            self.hparams.sample_metadata, dtype=str)
+        # extract the number of study batches
+        self.n_batches = len(set(self.metadata[self.hparams.batch_category]))
 
     def to_latent(self, X):
         return self.model.encode(X)
@@ -368,12 +378,8 @@ class LightningBatchVAE(LightningVAE):
             self.hparams.sample_metadata, dtype=str)
         index_name = self.metadata.columns[0]
         metadata = self.metadata.set_index(index_name)
-        batch_diffs = pd.read_table(self.hparams.batch_differentials)
-        index_name = batch_diffs.columns[0]
-        batch_diffs[index_name] = batch_diffs[index_name].astype(np.str)
-        batch_diffs = batch_diffs.set_index(index_name)
-        _dataset = BiomBatchDataset(
-            table, metadata, batch_diffs,
+        _dataset = BiomDataset(
+            table, metadata,
             batch_category=self.hparams.batch_category)
         _dataloader = DataLoader(
             _dataset, batch_size=self.hparams.batch_size,
@@ -455,6 +461,8 @@ class LightningBatchCatVAE(LightningBatchVAE, LightningCatVAE):
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
+            batch_dim=self.n_batches,
+            batch_priors=self.batch_priors,
             imputer=self.hparams.imputer,
             encoder_depth=self.hparams.encoder_depth,
             batch_size=self.hparams.batch_size,
@@ -483,6 +491,8 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
         self.model = LinearBatchVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
+            batch_dim=self.n_batches,
+            batch_priors=self.batch_priors,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias

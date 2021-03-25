@@ -89,7 +89,7 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
     m = np.zeros(D - 1)
     B = np.random.multivariate_normal(m, np.diag(alpha), size=C)
     batch_idx = np.random.randint(C, size=N)
-    eta = np.vstack([eta[i] + B[:, batch_idx[i]] for i in range(N)])
+    eta = np.vstack([eta[i] + B[batch_idx[i]] for i in range(N)])
     # Convert latent variables to observed counts
     tree = random_linkage(D)
     Psi = _balance_basis(tree)[0]

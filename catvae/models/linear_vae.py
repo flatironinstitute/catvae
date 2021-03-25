@@ -18,12 +18,11 @@ LOG_2_PI = np.log(2.0 * np.pi)
 class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, init_scale=0.001,
-                 use_analytic_elbo=True, encoder_depth=1,
+                 encoder_depth=1,
                  basis=None, bias=False):
         super(LinearVAE, self).__init__()
         self.bias = bias
         self.hidden_dim = hidden_dim
-        self.use_analytic_elbo = use_analytic_elbo
 
         if basis is None:
             tree = random_linkage(input_dim)
@@ -99,7 +98,7 @@ class LinearVAE(nn.Module):
 
 
 class LinearBatchVAE(LinearVAE):
-    def __init__(self, input_dim, hidden_dim, batch_dim, priors,
+    def __init__(self, input_dim, hidden_dim, batch_dim, batch_priors,
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False):
         """ Account for batch effects.
@@ -113,13 +112,14 @@ class LinearBatchVAE(LinearVAE):
         batch_dim : int
            Number of batches (i.e. studies) to do batch correction
         batch_priors : np.array of float
-           Normal priors for batch effects
+           Normal variance priors for batch effects of shape D
         """
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, init_scale,
-            use_analytic_elbo=False,
             basis=basis, encoder_depth=encoder_depth,
             bias=bias)
+        batch_priors = ilr(batch_priors, self.Psi)
+        self.register_buffer('batch_priors', batch_priors)
         self.batch_embed = nn.Embedding(batch_dim, input_dim - 1)
 
     def encode(self, x):
@@ -144,10 +144,14 @@ class LinearBatchVAE(LinearVAE):
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
         x_out += batch_effects  # Add batch effects back in
-        kl_div = (-self.gaussian_kl(
+        # Weight by latent prior
+        kl_div_z = (-self.gaussian_kl(
             z_mean, self.variational_logvars)).mean(0).sum()
+        # Weight by batch prior
+        kl_div_b = (-self.gaussian_kl(
+            batch_effects, self.batch_priors)).mean(0).sum()
         recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
-        loss = kl_div + recon_loss
+        loss = kl_div_z + kl_div_b + recon_loss
         return loss
 
     def get_reconstruction_loss(self, x, b):
