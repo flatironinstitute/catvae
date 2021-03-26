@@ -30,7 +30,7 @@ class LinearVAE(nn.Module):
         indices = np.vstack((basis.row, basis.col))
         Psi = torch.sparse_coo_tensor(
             indices.copy(), basis.data.astype(np.float32).copy(),
-            requires_grad=False)
+            requires_grad=False).coalesce()
         # note this line corresponds to the true input dim
         self.input_dim = Psi.shape[0]
         self.register_buffer('Psi', Psi)
@@ -118,7 +118,12 @@ class LinearBatchVAE(LinearVAE):
             input_dim, hidden_dim, init_scale,
             basis=basis, encoder_depth=encoder_depth,
             bias=bias)
-        batch_priors = ilr(batch_priors, self.Psi)
+        # Need to create a separate matrix, since abs doesn't work on
+        # sparse matrices :(
+        posPsi = torch.sparse.FloatTensor(
+            self.Psi.indices(), torch.abs(self.Psi.values()))
+
+        batch_priors = ilr(batch_priors, posPsi)
         self.register_buffer('batch_priors', batch_priors)
         self.batch_embed = nn.Embedding(batch_dim, input_dim - 1)
 
@@ -152,6 +157,7 @@ class LinearBatchVAE(LinearVAE):
             batch_effects, self.batch_priors)).mean(0).sum()
         recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
         loss = kl_div_z + kl_div_b + recon_loss
+        # something is wrong with kl_div_b
         return loss
 
     def get_reconstruction_loss(self, x, b):

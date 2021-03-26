@@ -84,15 +84,17 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
     sigma = np.sqrt(sigma_sq)
     z = np.random.normal(size=(total, hdims))
     eta = np.random.normal(np.matmul(z, W.T), sigma).astype(np.float32)
+    # Create ILR basis
+    tree = random_linkage(D)
+    Psi = _balance_basis(tree)[0]
     # add batch effects
-    alpha = np.abs(np.random.normal(0, 3, size=(D - 1)))
+    alpha = np.abs(np.random.normal(0, 3, size=(D)))
+    alphaILR = np.abs(Psi)  @ alpha # variances must always be positive
     m = np.zeros(D - 1)
-    B = np.random.multivariate_normal(m, np.diag(alpha), size=C)
+    B = np.random.multivariate_normal(m, np.diag(alphaILR), size=C)
     batch_idx = np.random.randint(C, size=N)
     eta = np.vstack([eta[i] + B[batch_idx[i]] for i in range(N)])
     # Convert latent variables to observed counts
-    tree = random_linkage(D)
-    Psi = _balance_basis(tree)[0]
     prob = closure(np.exp(eta @ Psi))
     depths = np.random.poisson(M, size=N)
     Y = np.vstack([np.random.multinomial(depths[i], prob[i])

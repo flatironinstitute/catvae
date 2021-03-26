@@ -362,6 +362,8 @@ class LightningBatchVAE(LightningVAE):
         batch_priors = pd.read_table(self.hparams.batch_priors, dtype=str)
         batch_priors = batch_priors.set_index(batch_priors.columns[0])
         batch_priors = batch_priors.loc[table.ids(axis='observation')]
+        # TODO: impute with 1 for now, will need to think about this
+        batch_priors = batch_priors.fillna(1)
         batch_priors = batch_priors.values.astype(np.float64).reshape(1, -1)
         self.batch_priors = torch.Tensor(batch_priors).float()
         self.metadata = pd.read_table(
