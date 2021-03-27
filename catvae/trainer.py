@@ -10,7 +10,7 @@ from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
     collate_batch_f
 )
-from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
+from catvae.models import LinearCatVAE, LinearVAE
 from catvae.composition import (ilr_inv, alr_basis,
                                 ilr_basis, identity_basis)
 from catvae.metrics import (
@@ -19,13 +19,20 @@ from catvae.metrics import (
 import pytorch_lightning as pl
 from skbio import TreeNode
 from skbio.stats.composition import alr_inv, closure
-
+from sklearn.linear_model import SGDClassifier
+from sklearn.metrics import (
+    accuracy_score, f1_score, precision_score, recall_score)
+from sklearn.exceptions import NotFittedError
 from biom import load_table
 import pandas as pd
 from scipy.stats import entropy
 from scipy.sparse import coo_matrix
 import numpy as np
 import os
+
+
+def to_numpy(x):
+    return x.detach().cpu().numpy()
 
 
 class LightningVAE(pl.LightningModule):
@@ -332,7 +339,6 @@ class LightningCatVAE(LightningVAE):
         return super().training_step(batch, batch_idx)
 
 
-
 class LightningLinearVAE(LightningVAE):
     def __init__(self, args):
         super(LightningLinearVAE, self).__init__(args)
@@ -349,6 +355,7 @@ class LightningLinearVAE(LightningVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
+
 # Batch correction methods
 class LightningBatchVAE(LightningVAE):
     def __init__(self, args):
@@ -356,23 +363,57 @@ class LightningBatchVAE(LightningVAE):
         self.hparams = args
         self.gt_eigvectors = None
         self.gt_eigs = None
-        # we'll read in the metadata / table twice, whatever
-        # We may need to adjust this in the future.
-        table = load_table(self.hparams.train_biom)
-        batch_priors = pd.read_table(self.hparams.batch_priors, dtype=str)
-        batch_priors = batch_priors.set_index(batch_priors.columns[0])
-        batch_priors = batch_priors.loc[table.ids(axis='observation')]
-        # TODO: impute with 1 for now, will need to think about this
-        batch_priors = batch_priors.fillna(1)
-        batch_priors = batch_priors.values.astype(np.float64).reshape(1, -1)
-        self.batch_priors = torch.Tensor(batch_priors).float()
+        # an ensemble of lasso models
+        self.regularizers = [1, 0.1, 0.01, 0.001]
+        self.lassos = [
+            SGDClassifier(
+                loss='log', alpha=c, penalty='l1')
+            for c in self.regularizers
+        ]
+        # index for best batch effect classifier
+        # initialize to None if batch models aren't fitted
+        self.best_batch_idx = None
+        # get number of batches
         self.metadata = pd.read_table(
             self.hparams.sample_metadata, dtype=str)
-        # extract the number of study batches
-        self.n_batches = len(set(self.metadata[self.hparams.batch_category]))
+        self.classes = np.arange(len(
+            np.unique(self.metadata[args.batch_category])))
 
-    def to_latent(self, X):
-        return self.model.encode(X)
+    def _batch_indices(self, eps=0.1):
+        """ Obtain best batch predictor """
+        batch_clf = self.lassos[self.best_batch_idx]
+        idx = set()
+        nums = np.arange(batch_clf.coef_.shape[1])
+        for i in range(batch_clf.coef_.shape[0]):
+            arr = batch_clf.coef_[i]
+            j = abs(arr) > eps
+            idx = idx | set(nums[j])
+        idx = np.array(list(idx))
+        return idx
+
+    def to_latent(self, X, exclude_batch=True, eps=0.1):
+        """ Obtain latent representation """
+        if not exclude_batch:
+            return self.model.encode(X)
+        idx = self._batch_indices(eps)
+        z = self.model.encode(X)
+        # exclude the dimensions that best predict batches
+        cidx = torch.Tensor(
+            list(set(np.arange(z.shape[1])) - set(idx))
+        ).long()
+        return z[:, cidx]
+
+    def get_embedding(self, exclude_batch=True, eps=0.1):
+        """ Obtain microbial embedding matrix """
+        W = self.model.decoder.weight
+        if not exclude_batch:
+            return W
+        idx = self._batch_indices(eps)
+        # exclude the dimensions that best predict batches
+        cidx = torch.Tensor(
+            list(set(np.arange(W.shape[1])) - set(idx))
+        ).long()
+        return W[:, cidx]
 
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
@@ -402,9 +443,16 @@ class LightningBatchVAE(LightningVAE):
     def training_step(self, batch, batch_idx):
         self.model.train()
         counts, batch_ids = batch
+
+        # Train sklearn batch classifiers
+        for i in range(len(self.lassos)):
+            z = self.model.encode(counts)
+            self.lassos[i].partial_fit(
+                X=to_numpy(z), y=to_numpy(batch_ids),
+                classes=self.classes)
+
         counts = counts.to(self.device)
-        batch_ids = batch_ids.to(self.device)
-        loss = self.model(counts, batch_ids)
+        loss = self.model(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -419,19 +467,102 @@ class LightningBatchVAE(LightningVAE):
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
-            counts, batch_effect = batch
+            counts, batch_ids = batch
+            batch_ids = to_numpy(batch_ids)
+            ccounts = to_numpy(counts)
+            batch_logs = {}
+            # obtain batch effect prediction results
+            z = to_numpy(self.model.encode(counts))
+            for i in range(len(self.lassos)):
+                try:
+                    y_pred = self.lassos[i].predict(z)
+                except NotFittedError:
+                    self.lassos[i].partial_fit(
+                        X=z, y=batch_ids,
+                        classes=self.classes)
+                    y_pred = self.lassos[i].predict(z)
+                label = self.regularizers[i]
+                output = {
+                    f'batch_accuracy_{label}': accuracy_score(
+                        batch_ids, y_pred),
+                    f'batch_F1_{label}': f1_score(
+                        batch_ids, y_pred, average='micro'),
+                    f'batch_precision_{label}': precision_score(
+                        batch_ids, y_pred, average='micro'),
+                    f'batch_recall_{label}': recall_score(
+                        batch_ids, y_pred, average='micro')
+                }
+                batch_logs = {**batch_logs, **output}
             counts = counts.to(self.device)
-            batch_effect = batch_effect.to(self.device)
-            loss = self.model(counts, batch_effect)
+            loss = self.model(counts)
             assert torch.isnan(loss).item() is False
-
             # Record the actual loss.
-            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
+            rec_err = self.model.get_reconstruction_loss(counts)
             tensorboard_logs = {'validation_loss': loss,
                                 'val_rec_err': rec_err}
-
+            tensorboard_logs = {**tensorboard_logs, **batch_logs}
             # log the learning rate
             return {'validation_loss': loss, 'log': tensorboard_logs}
+
+
+    def validation_epoch_end(self, outputs):
+        loss_f = lambda x: x['log']['val_rec_err']
+        losses = list(map(loss_f, outputs))
+        rec_err = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val_rec_err',
+                                          rec_err, self.global_step)
+        # Get batch effect results, and decide optimal model based on F1 score
+        metrics = ['batch_accuracy', 'batch_F1',
+                   'batch_precision', 'batch_recall']
+        results = {}
+        for i in range(len(self.lassos)):
+            label = self.regularizers[i]
+            res = []
+            for m in metrics:
+                name = f'{m}_{label}'
+                metric_f = lambda x: x['log'][name]
+                mets = list(map(metric_f, outputs))
+                avg_met = sum(mets) / len(mets)
+                self.logger.experiment.add_scalar(
+                    name, avg_met, self.global_step)
+                res.append(avg_met)
+            res = dict(zip(metrics, res))
+            results[label] = res
+        # get optimal model
+        self.best_batch_idx = np.argmax([results[i]['batch_F1']
+                                         for i in self.regularizers])
+        # get simulation results
+        if self.hparams.encoder_depth == 1:
+            mt = metric_transpose_theorem(self.model)
+            self.logger.experiment.add_scalar('transpose', mt, self.global_step)
+        ortho, eig_err = metric_orthogonality(self.model)
+        self.logger.experiment.add_scalar('orthogonality',
+                                          ortho, self.global_step)
+
+        tensorboard_logs = dict(
+            [('val_loss', rec_err),
+             # ('transpose', mt),
+             ('orthogonality', ortho),
+             ('eigenvalue-error', eig_err)]
+        )
+
+        if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
+            ms = metric_subspace(self.model, self.gt_eigvectors, self.gt_eigs)
+            ma = metric_alignment(self.model, self.gt_eigvectors)
+            mp = metric_procrustes(self.model, self.gt_eigvectors)
+            mr = metric_pairwise(self.model, self.gt_eigvectors, self.gt_eigs)
+            tlog = {'subspace_distance': ms, 'alignment': ma, 'procrustes': mp}
+            self.logger.experiment.add_scalar(
+                'procrustes', mp, self.global_step)
+            self.logger.experiment.add_scalar(
+                'pairwise_r', mr, self.global_step)
+            self.logger.experiment.add_scalar(
+                'subspace_distance', ms, self.global_step)
+            self.logger.experiment.add_scalar(
+                'alignment', ma, self.global_step)
+            tensorboard_logs = {**tensorboard_logs, **tlog}
+
+        return {'val_loss': rec_err, 'log': tensorboard_logs}
 
 
     @staticmethod
@@ -459,12 +590,10 @@ class LightningBatchCatVAE(LightningBatchVAE, LightningCatVAE):
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
-        self.model = LinearBatchCatVAE(
+        self.model = LinearCatVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
-            batch_dim=self.n_batches,
-            batch_priors=self.batch_priors,
             imputer=self.hparams.imputer,
             encoder_depth=self.hparams.encoder_depth,
             batch_size=self.hparams.batch_size,
@@ -490,31 +619,12 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
-        self.model = LinearBatchVAE(
+        self.model = LinearVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
-            batch_dim=self.n_batches,
-            batch_priors=self.batch_priors,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias
         )
         self.gt_eigvectors = None
         self.gt_eigs = None
-
-
-    def validation_step(self, batch, batch_idx):
-        with torch.no_grad():
-            counts, batch_effect = batch
-            counts = counts.to(self.device)
-            batch_effect = batch_effect.to(self.device)
-            loss = self.model(counts, batch_effect)
-            assert torch.isnan(loss).item() is False
-
-            # Record the actual loss.
-            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
-            tensorboard_logs = {'validation_loss': loss,
-                                'val_rec_err': rec_err}
-
-            # log the learning rate
-            return {'validation_loss': loss, 'log': tensorboard_logs}

@@ -88,8 +88,8 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
     tree = random_linkage(D)
     Psi = _balance_basis(tree)[0]
     # add batch effects
-    alpha = np.abs(np.random.normal(0, 3, size=(D)))
-    alphaILR = np.abs(Psi)  @ alpha # variances must always be positive
+    alpha = np.abs(np.random.normal(1, 3, size=(D)))
+    alphaILR = np.abs(Psi)  @ alpha  # variances must always be positive
     m = np.zeros(D - 1)
     B = np.random.multivariate_normal(m, np.diag(alphaILR), size=C)
     batch_idx = np.random.randint(C, size=N)
