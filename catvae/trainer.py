@@ -405,46 +405,22 @@ class LightningBatchVAE(LightningVAE):
         counts, batch_ids = batch
         counts = counts.to(self.device)
         batch_ids = batch_ids.to(self.device)
-        if optimizer_idx == 0:  # Generator loss
-            self.model.train()
-            pos_loss = self.model(counts, batch_ids)
-            z = self.model.encode(counts)
-            batch_pred = torch.argmax(self.discriminator(z), axis=1)
-            neg_loss = self.model(counts, batch_pred.detach())
-            loss = pos_loss - 0.01 * neg_loss   # contrastive loss
-            assert torch.isnan(loss).item() is False
-            if len(self.trainer.lr_schedulers) >= 1:
-                lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-                current_lr = lr
-            else:
-                current_lr = self.hparams.learning_rate
-            tensorboard_logs = {
-                'train_loss': loss, 'elbo': -loss,
-                'lr': current_lr, 'g_loss' : loss
-            }
-            # log the learning rate
-            return {'loss': loss, 'log': tensorboard_logs}
-        if optimizer_idx == 1:  # Discriminator loss
-            self.discriminator.train()
-            z = self.model.encode(counts)
-            batch_pred = self.discriminator(z)
-            loss = F.cross_entropy(batch_pred, batch_ids)
-            assert torch.isnan(loss).item() is False
-            if len(self.trainer.lr_schedulers) >= 1:
-                lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-                current_lr = lr
-            else:
-                current_lr = self.hparams.learning_rate
-
-            tensorboard_logs = {
-                'train_loss': loss, 'elbo': -loss, 'lr': current_lr, 'd_loss' : loss
-            }
-            # log the learning rate
-            return {'loss': loss, 'log': tensorboard_logs}
+        self.model.train()
+        loss = self.model(counts, batch_ids)
+        assert torch.isnan(loss).item() is False
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams.learning_rate
+        tensorboard_logs = {
+            'train_loss': loss, 'elbo': -loss,
+            'lr': current_lr, 'g_loss' : loss
+        }
+        # log the learning rate
+        return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        opt_d = torch.optim.Adam(self.discriminator.parameters(),
-                                 lr=self.hparams.learning_rate)
         opt_g = torch.optim.Adam(self.model.parameters(),
                                  lr=self.hparams.learning_rate)
         if self.hparams.scheduler == 'cosine':
@@ -465,7 +441,7 @@ class LightningBatchVAE(LightningVAE):
         else:
             s = self.hparams.scheduler
             raise ValueError(f'{s} is not implemented.')
-        return [opt_g, opt_d], [scheduler, scheduler]
+        return [opt_g], [scheduler]
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
@@ -518,9 +494,6 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias
         )
-        self.discriminator = nn.Sequential(
-            nn.Linear(args.n_latent, self.n_batches),
-            nn.Softmax())
         self.gt_eigvectors = None
         self.gt_eigs = None
 
