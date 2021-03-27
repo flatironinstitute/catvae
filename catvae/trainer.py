@@ -407,7 +407,11 @@ class LightningBatchVAE(LightningVAE):
         batch_ids = batch_ids.to(self.device)
         if optimizer_idx == 0:  # Generator loss
             self.model.train()
-            loss = self.model(counts, batch_ids)
+            pos_loss = self.model(counts, batch_ids)
+            z = self.model.encode(counts)
+            batch_pred = torch.argmax(self.discriminator(z), axis=1)
+            neg_loss = self.model(counts, batch_pred.detach())
+            loss = pos_loss - 0.01 * neg_loss   # contrastive loss
             assert torch.isnan(loss).item() is False
             if len(self.trainer.lr_schedulers) >= 1:
                 lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -415,7 +419,8 @@ class LightningBatchVAE(LightningVAE):
             else:
                 current_lr = self.hparams.learning_rate
             tensorboard_logs = {
-                'train_loss': loss, 'elbo': -loss, 'lr': current_lr, 'g_loss' : loss
+                'train_loss': loss, 'elbo': -loss,
+                'lr': current_lr, 'g_loss' : loss
             }
             # log the learning rate
             return {'loss': loss, 'log': tensorboard_logs}
