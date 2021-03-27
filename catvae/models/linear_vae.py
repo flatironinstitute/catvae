@@ -187,11 +187,11 @@ class LinearBatchVAE(LinearVAE):
         kl_div_z = (-self.gaussian_kl(
             z_mean, self.variational_logvars)).mean(0).sum()
         # Weight by batch differential prior
-        # TODO: think about how to do this better with Grassmannians
-        # batch_effects = self.decoder.weight[:self.batch_dim]
-        # kl_div_b = (-self.gaussian_kl(
-        #     batch_effects, self.batch_priors)).mean(0).sum()
-        kl_div_b = 0
+        Wb = self.decoder.weight[:self.batch_dim]
+        zb = z_mean[:self.batch_dim]
+        batch_effects = Wb @ zb
+        kl_div_b = (-self.gaussian_kl(
+            batch_effects, self.batch_priors)).mean(0).sum()
         # Weight by batch class prior
         batch_pred = self.classifier(z_mean[:self.batch_dim])
         kl_div_y = (-self.multinomial_kl(
