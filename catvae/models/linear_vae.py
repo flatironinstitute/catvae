@@ -28,17 +28,19 @@ def get_basis(input_dim, basis=None):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, depth=1, init_scale=0.001):
+    def __init__(self, input_dim, hidden_dim, bias=False,
+                 depth=1, init_scale=0.001):
+        super(Encoder, self).__init__()
         if depth > 1:
             self.first_encoder = nn.Linear(
-                self.input_dim, hidden_dim, bias=self.bias)
+                input_dim, hidden_dim, bias=bias)
             num_encoder_layers = depth
             layers = []
             layers.append(self.first_encoder)
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(nn.Softplus())
                 layers.append(
-                    nn.Linear(hidden_dim, hidden_dim, bias=self.bias))
+                    nn.Linear(hidden_dim, hidden_dim, bias=bias))
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -48,7 +50,7 @@ class Encoder(nn.Module):
 
         else:
             self.encoder = nn.Linear(
-                self.input_dim, hidden_dim, bias=self.bias)
+                input_dim, hidden_dim, bias=bias)
             self.encoder.weight.data.normal_(0.0, init_scale)
 
     def forward(self, x):
@@ -135,16 +137,17 @@ class LinearBatchVAE(LinearVAE):
             init_scale, basis=basis, encoder_depth=encoder_depth,
             bias=bias)
         Psi = get_basis(input_dim, basis).coalesce()
+        self.register_buffer('Psi', Psi)
         # note this line corresponds to the true input dim
         self.input_dim = Psi.shape[0]
-        self.register_buffer('Psi', Psi)
-
-        self.encoder = Encoder(self.input_dim, hidden_dim)
-        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=self.bias)
+        encoder_dim = self.input_dim + batch_dim
+        latent_dim = hidden_dim + batch_dim
+        self.encoder = Encoder(encoder_dim, latent_dim)
+        self.decoder = nn.Linear(latent_dim, self.input_dim, bias=self.bias)
         geotorch.grassmannian(self.decoder, 'weight')
 
         self.imputer = lambda x: x + 1
-        self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
+        self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         # Need to create a separate matrix, since abs doesn't work on
         # sparse matrices :(
@@ -161,10 +164,23 @@ class LinearBatchVAE(LinearVAE):
         self.batch_dim = batch_dim
         self.batch_embed = nn.Embedding(batch_dim, batch_dim)
 
-    def encode(self, x):
+    def encode(self, x, b):
+        # TODO: need to figure out how to marginalize out b
         hx = ilr(self.imputer(x), self.Psi)
-        z = self.encoder(hx)
+        bx = self.batch_embed(b)
+        hbx = torch.cat((bx, hx), dim=1)
+        z = self.encoder(hbx)
         return z
+
+    def classify(self, x, b):
+        # TODO: need to figure out how to marginalize out b
+        hx = ilr(self.imputer(x), self.Psi)
+        bx = self.batch_embed(b)
+        hbx = torch.cat((bx, hx), dim=1)
+        z_mean = self.encoder(hbx)
+        zb = z_mean[:, :self.batch_dim]
+        batch_pred = self.batch_classifier(zb)
+        return batch_pred
 
     def forward(self, x, b):
         """ Forward pass
@@ -178,7 +194,7 @@ class LinearBatchVAE(LinearVAE):
         """
         hx = ilr(self.imputer(x), self.Psi)
         bx = self.batch_embed(b)
-        hbx = torch.cat(bx, hx)
+        hbx = torch.cat((bx, hx), dim=1)
         z_mean = self.encoder(hbx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
@@ -187,27 +203,27 @@ class LinearBatchVAE(LinearVAE):
         kl_div_z = (-self.gaussian_kl(
             z_mean, self.variational_logvars)).mean(0).sum()
         # Weight by batch differential prior
-        Wb = self.decoder.weight[:self.batch_dim]
-        zb = z_mean[:self.batch_dim]
-        batch_effects = Wb @ zb
+        Wb = self.decoder.weight[:, :self.batch_dim]
+        zb = z_mean[:, :self.batch_dim]
+        batch_effects = zb @ Wb.T
         kl_div_b = (-self.gaussian_kl(
             batch_effects, self.batch_priors)).mean(0).sum()
         # Weight by batch class prior
-        batch_pred = self.classifier(z_mean[:self.batch_dim])
+        batch_pred = self.batch_classifier(zb)
         kl_div_y = (-self.multinomial_kl(
-            self.class_priors, batch_pred))
+            self.class_priors, batch_pred)).mean(0).sum()
         recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
         loss = kl_div_z + kl_div_b + kl_div_y + recon_loss
-        # something is wrong with kl_div_b
-        return loss
+        return loss, kl_div_z, kl_div_b, kl_div_y, recon_loss
 
     def get_reconstruction_loss(self, x, b):
         batch_effects = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
-        z_mean = self.encoder(hx)
+        bx = self.batch_embed(b)
+        hbx = torch.cat((bx, hx), dim=1)
+        z_mean = self.encoder(hbx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
-        x_out += batch_effects  # Add batch effects back in
         recon_loss = -self.recon_model_loglik(x, x_out)
         return recon_loss
