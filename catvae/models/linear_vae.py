@@ -8,7 +8,8 @@ import torch.nn as nn
 from catvae.composition import ilr
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
-from torch.distributions import Multinomial
+from torch.distributions import Multinomial, Normal
+from torch.distributions.kl import kl_divergence
 import numpy as np
 import geotorch
 
@@ -65,6 +66,11 @@ class LinearVAE(nn.Module):
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
 
+    def gaussian_kl2(self, m1, s1, m2, s2):
+        x = Normal(m1, s1)
+        y = Normal(m2, s2)
+        return kl_divergence(x, y)
+
     def recon_model_loglik(self, x_in, x_out):
         logp = (self.Psi.t() @ x_out.t()).t()
         mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
@@ -98,7 +104,7 @@ class LinearVAE(nn.Module):
 
 
 class LinearBatchVAE(LinearVAE):
-    def __init__(self, input_dim, hidden_dim, batch_dim, batch_priors,
+    def __init__(self, input_dim, hidden_dim, batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False):
         """ Account for batch effects.
@@ -122,10 +128,11 @@ class LinearBatchVAE(LinearVAE):
         # sparse matrices :(
         posPsi = torch.sparse.FloatTensor(
             self.Psi.indices(), torch.abs(self.Psi.values()))
-
-        batch_priors = ilr(batch_priors, posPsi)
-        self.register_buffer('batch_priors', batch_priors)
-        self.batch_embed = nn.Embedding(batch_dim, input_dim - 1)
+        batch_prior = ilr(batch_prior, posPsi)
+        self.register_buffer('batch_prior', batch_prior)
+        self.batch_logvars = nn.Parameter(torch.zeros(self.input_dim))
+        self.batch_embed = nn.Embedding(batch_dim, batch_dim)
+        self.beta = nn.Embedding(batch_dim, self.input_dim)
 
     def encode(self, x):
         hx = ilr(self.imputer(x), self.Psi)
@@ -142,26 +149,29 @@ class LinearBatchVAE(LinearVAE):
         b : torch.Tensor
             Batch indices of shape C
         """
-        batch_effects = self.batch_embed(b)
+        bx = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
+        hbx = torch.cat((bx, hx), dim=1)
         z_mean = self.encoder(hx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
+        batch_effects = self.beta(b)
         x_out += batch_effects  # Add batch effects back in
         # Weight by latent prior
         kl_div_z = (-self.gaussian_kl(
             z_mean, self.variational_logvars)).mean(0).sum()
         # Weight by batch prior
-        kl_div_b = (-self.gaussian_kl(
-            batch_effects, self.batch_priors)).mean(0).sum()
+        kl_div_b = (-self.gaussian_kl2(
+            batch_effects, torch.exp(self.batch_logvars),
+            torch.zeros_like(self.batch_prior), self.batch_prior
+        )).mean(0).sum()
         recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
-        loss = kl_div_z + kl_div_b + recon_loss
-        # something is wrong with kl_div_b
+        loss = recon_loss + kl_div_z + kl_div_b
         return loss
 
     def get_reconstruction_loss(self, x, b):
-        batch_effects = self.batch_embed(b)
+        batch_effects = self.beta(b)
         hx = ilr(self.imputer(x), self.Psi)
         z_mean = self.encoder(hx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)

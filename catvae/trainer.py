@@ -361,13 +361,13 @@ class LightningBatchVAE(LightningVAE):
         # we'll read in the metadata / table twice, whatever
         # We may need to adjust this in the future.
         table = load_table(self.hparams.train_biom)
-        batch_priors = pd.read_table(self.hparams.batch_priors, dtype=str)
-        batch_priors = batch_priors.set_index(batch_priors.columns[0])
-        batch_priors = batch_priors.loc[table.ids(axis='observation')]
+        batch_prior = pd.read_table(self.hparams.batch_prior, dtype=str)
+        batch_prior = batch_prior.set_index(batch_prior.columns[0])
+        batch_prior = batch_prior.loc[table.ids(axis='observation')]
         # TODO: impute with 1 for now, will need to think about this
-        batch_priors = batch_priors.fillna(1)
-        batch_priors = batch_priors.values.astype(np.float64).reshape(1, -1)
-        self.batch_priors = torch.Tensor(batch_priors).float()
+        batch_prior = batch_prior.fillna(1)
+        batch_prior = batch_prior.values.astype(np.float64).reshape(1, -1)
+        self.batch_prior = torch.Tensor(batch_prior).float()
         self.metadata = pd.read_table(
             self.hparams.sample_metadata, dtype=str)
         # extract the number of study batches
@@ -401,50 +401,26 @@ class LightningBatchVAE(LightningVAE):
     def test_dataloader(self):
         return self._dataloader(self.hparams.test_biom, shuffle=False)
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx):
         counts, batch_ids = batch
         counts = counts.to(self.device)
         batch_ids = batch_ids.to(self.device)
-        if optimizer_idx == 0:  # Generator loss
-            self.model.train()
-            pos_loss = self.model(counts, batch_ids)
-            z = self.model.encode(counts)
-            batch_pred = torch.argmax(self.discriminator(z), axis=1)
-            neg_loss = self.model(counts, batch_pred.detach())
-            loss = pos_loss - 0.01 * neg_loss   # contrastive loss
-            assert torch.isnan(loss).item() is False
-            if len(self.trainer.lr_schedulers) >= 1:
-                lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-                current_lr = lr
-            else:
-                current_lr = self.hparams.learning_rate
-            tensorboard_logs = {
-                'train_loss': loss, 'elbo': -loss,
-                'lr': current_lr, 'g_loss' : loss
-            }
-            # log the learning rate
-            return {'loss': loss, 'log': tensorboard_logs}
-        if optimizer_idx == 1:  # Discriminator loss
-            self.discriminator.train()
-            z = self.model.encode(counts)
-            batch_pred = self.discriminator(z)
-            loss = F.cross_entropy(batch_pred, batch_ids)
-            assert torch.isnan(loss).item() is False
-            if len(self.trainer.lr_schedulers) >= 1:
-                lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-                current_lr = lr
-            else:
-                current_lr = self.hparams.learning_rate
-
-            tensorboard_logs = {
-                'train_loss': loss, 'elbo': -loss, 'lr': current_lr, 'd_loss' : loss
-            }
-            # log the learning rate
-            return {'loss': loss, 'log': tensorboard_logs}
+        self.model.train()
+        loss = self.model(counts, batch_ids)
+        assert torch.isnan(loss).item() is False
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams.learning_rate
+        tensorboard_logs = {
+            'train_loss': loss, 'elbo': -loss,
+            'lr': current_lr, 'g_loss' : loss
+        }
+        # log the learning rate
+        return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        opt_d = torch.optim.Adam(self.discriminator.parameters(),
-                                 lr=self.hparams.learning_rate)
         opt_g = torch.optim.Adam(self.model.parameters(),
                                  lr=self.hparams.learning_rate)
         if self.hparams.scheduler == 'cosine':
@@ -461,11 +437,11 @@ class LightningBatchVAE(LightningVAE):
             steps = self.hparams.epochs // steps
             scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'none':
-            return [opt_g, opt_d]
+            return opt_g
         else:
             s = self.hparams.scheduler
             raise ValueError(f'{s} is not implemented.')
-        return [opt_g, opt_d], [scheduler, scheduler]
+        return [opt_g], [scheduler]
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
@@ -494,7 +470,7 @@ class LightningBatchVAE(LightningVAE):
             help='Sample metadata column for batch effects.',
             required=False, type=str, default=None)
         parser.add_argument(
-            '--batch-priors',
+            '--batch-prior',
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=False, type=str, default=None)
@@ -513,7 +489,7 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
             n_input,
             hidden_dim=self.hparams.n_latent,
             batch_dim=self.n_batches,
-            batch_priors=self.batch_priors,
+            batch_prior=self.batch_prior,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias
