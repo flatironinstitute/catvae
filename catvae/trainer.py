@@ -351,6 +351,7 @@ class LightningLinearVAE(LightningVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
+
 # Batch correction methods
 class LightningBatchVAE(LightningVAE):
     def __init__(self, args):
@@ -406,7 +407,8 @@ class LightningBatchVAE(LightningVAE):
         counts = counts.to(self.device)
         batch_ids = batch_ids.to(self.device)
         self.model.train()
-        loss = self.model(counts, batch_ids)
+        losses = self.model(counts, batch_ids)
+        loss, recon_loss, kl_div_z, kl_div_b = losses
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
@@ -415,6 +417,9 @@ class LightningBatchVAE(LightningVAE):
             current_lr = self.hparams.learning_rate
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss,
+            'train/recon_loss': recon_loss,
+            'train/kl_div_z': kl_div_z,
+            'train/kl_div_b': kl_div_b,
             'lr': current_lr, 'g_loss' : loss
         }
         # log the learning rate
@@ -445,20 +450,38 @@ class LightningBatchVAE(LightningVAE):
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
-            counts, batch_effect = batch
+            counts, batch_ids = batch
             counts = counts.to(self.device)
-            batch_effect = batch_effect.to(self.device)
-            loss = self.model(counts, batch_effect)
+            batch_ids = batch_ids.to(self.device)
+            losses = self.model(counts, batch_ids)
+            loss, rec_err, kl_div_z, kl_div_b = losses
             assert torch.isnan(loss).item() is False
 
             # Record the actual loss.
-            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
             tensorboard_logs = {'validation_loss': loss,
+                                'val/recon_loss': rec_err,
+                                'val/kl_div_z': kl_div_z,
+                                'val/kl_div_b': kl_div_b,
                                 'val_rec_err': rec_err}
 
             # log the learning rate
             return {'validation_loss': loss, 'log': tensorboard_logs}
 
+    def validation_epoch_end(self, outputs):
+        metrics = ['validation_loss',
+                   'val/recon_loss',
+                   'val/kl_div_z',
+                   'val/kl_div_b',
+                   'val_rec_err']
+        tensorboard_logs = {}
+        for m in metrics:
+            loss_f = lambda x: x['log'][m]
+            losses = list(map(loss_f, outputs))
+            rec_err = sum(losses) / len(losses)
+            self.logger.experiment.add_scalar(
+                m, rec_err, self.global_step)
+            tensorboard_logs[m] = rec_err
+        return {'val_loss': rec_err, 'log': tensorboard_logs}
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
@@ -499,19 +522,3 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
             nn.Softmax())
         self.gt_eigvectors = None
         self.gt_eigs = None
-
-    def validation_step(self, batch, batch_idx):
-        with torch.no_grad():
-            counts, batch_effect = batch
-            counts = counts.to(self.device)
-            batch_effect = batch_effect.to(self.device)
-            loss = self.model(counts, batch_effect)
-            assert torch.isnan(loss).item() is False
-
-            # Record the actual loss.
-            rec_err = self.model.get_reconstruction_loss(counts, batch_effect)
-            tensorboard_logs = {'validation_loss': loss,
-                                'val_rec_err': rec_err}
-
-            # log the learning rate
-            return {'validation_loss': loss, 'log': tensorboard_logs}

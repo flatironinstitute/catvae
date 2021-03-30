@@ -69,7 +69,7 @@ class LinearVAE(nn.Module):
     def gaussian_kl2(self, m1, s1, m2, s2):
         x = Normal(m1, s1)
         y = Normal(m2, s2)
-        return kl_divergence(x, y)
+        return - kl_divergence(x, y)
 
     def recon_model_loglik(self, x_in, x_out):
         logp = (self.Psi.t() @ x_out.t()).t()
@@ -168,14 +168,16 @@ class LinearBatchVAE(LinearVAE):
         )).mean(0).sum()
         recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
         loss = recon_loss + kl_div_z + kl_div_b
-        return loss
+        return loss, recon_loss, kl_div_z, kl_div_b
 
     def get_reconstruction_loss(self, x, b):
-        batch_effects = self.beta(b)
+        bx = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
-        z_mean = self.encoder(hx)
+        hbx = torch.cat((bx, hx), dim=1)
+        z_mean = self.encoder(hbx)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        batch_effects = self.beta(b)
         x_out = self.decoder(z_sample)
         x_out += batch_effects  # Add batch effects back in
         recon_loss = -self.recon_model_loglik(x, x_out)
