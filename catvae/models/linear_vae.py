@@ -155,7 +155,7 @@ class LinearBatchVAE(LinearVAE):
             self.Psi.indices(), torch.abs(self.Psi.values()))
         batch_priors = ilr(batch_priors, posPsi)
         self.batch_classifier = nn.Sequential(
-            nn.Linear(batch_dim, batch_dim),
+            nn.Linear(latent_dim, batch_dim),
             nn.Softmax())
         if class_priors is None:
             class_priors = torch.ones(batch_dim) / batch_dim
@@ -178,7 +178,7 @@ class LinearBatchVAE(LinearVAE):
         bx = self.batch_embed(b)
         hbx = torch.cat((bx, hx), dim=1)
         z_mean = self.encoder(hbx)
-        zb = z_mean[:, :self.batch_dim]
+        zb = z_mean  #[:, :self.batch_dim]
         batch_pred = self.batch_classifier(zb)
         return batch_pred
 
@@ -209,7 +209,7 @@ class LinearBatchVAE(LinearVAE):
         kl_div_b = (-self.gaussian_kl(
             batch_effects, self.batch_priors)).mean(0).sum()
         # Weight by batch class prior
-        batch_pred = self.batch_classifier(zb)
+        batch_pred = self.batch_classifier(z_mean)  # testing for now
         kl_div_y = (-self.multinomial_kl(
             self.class_priors, batch_pred)).mean(0).sum()
         recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
