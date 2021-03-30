@@ -522,3 +522,7 @@ class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
             nn.Softmax())
         self.gt_eigvectors = None
         self.gt_eigs = None
+
+    def initialize(self, W, beta):
+        self.decoder.weight.data = W
+        self.beta.weight.data = beta

@@ -153,11 +153,16 @@ class LinearBatchVAE(LinearVAE):
         hx = ilr(self.imputer(x), self.Psi)
         hbx = torch.cat((bx, hx), dim=1)
         z_mean = self.encoder(hx)
+        # sample z
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
-        x_out = self.decoder(z_sample)
+        # sample beta
+        eps = torch.normal(torch.zeros_like(bx), 1.0)
         batch_effects = self.beta(b)
-        x_out += batch_effects  # Add batch effects back in
+        b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
+
+        x_out = self.decoder(z_sample)
+        x_out += b_sample  # Add batch effects back in
         # Weight by latent prior
         kl_div_z = (-self.gaussian_kl(
             z_mean, self.variational_logvars)).mean(0).sum()
