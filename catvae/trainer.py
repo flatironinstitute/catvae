@@ -6,7 +6,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
-    CosineAnnealingWarmRestarts, StepLR
+    CosineAnnealingWarmRestarts, StepLR,
+    CosineAnnealingLR
 )
 from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
@@ -393,11 +394,11 @@ class LightningBatchLinearVAE(LightningVAE):
     def initialize(self, W, beta):
         # can't initialize W due to geotorch
         # https://github.com/Lezcano/geotorch/issues/14
-        #self.model.decoder.weight.data = W.data
-        self.model.beta.weight.data = beta.data
+        self.model.decoder.weight.data = W.data
+        #self.model.beta.weight.data = beta.data
         # below is just to test the decoder
-        self.model.beta.requires_grad = False
-        #self.model.decoder.weight.requires_grad = False
+        #self.model.beta.requires_grad = False
+        self.model.decoder.weight.requires_grad = False
 
     def to_latent(self, X):
         return self.model.encode(X)
@@ -453,9 +454,12 @@ class LightningBatchLinearVAE(LightningVAE):
     def configure_optimizers(self):
         opt_g = torch.optim.Adam(self.model.parameters(),
                                  lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine':
+        if self.hparams.scheduler == 'cosine_warmup':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
+        elif self.hparams.scheduler == 'cosine':
+            scheduler = CosineAnnealingLR(
+                opt_g, T_max=50)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-1  # maximum learning rate
             steps = int(np.log2(m / self.hparams.learning_rate))

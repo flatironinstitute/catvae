@@ -196,11 +196,11 @@ class LinearBatchVAE(LinearVAE):
         kl_div_z = self.gaussian_kl(
             z_mean, self.variational_logvars).mean(0).sum()
         # Weight by batch prior
-        # kl_div_b = self.gaussian_kl2(
-        #     batch_effects, torch.exp(self.batch_logvars),
-        #     torch.zeros_like(self.batch_prior), self.batch_prior
-        # ).mean(0).sum()
-        kl_div_b = 0
+        # kl_div_b = 0
+        kl_div_b = self.gaussian_kl2(
+            batch_effects, torch.exp(self.batch_logvars),
+            torch.zeros_like(self.batch_prior), self.batch_prior
+        ).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
         elbo = recon_loss + kl_div_z + kl_div_b
         loss = - elbo
