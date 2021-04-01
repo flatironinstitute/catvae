@@ -75,7 +75,7 @@ class LinearCatVAE(nn.Module):
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.01))
         self.eta = nn.Parameter(torch.zeros(batch_size, self.input_dim))
         self.eta.data.normal_(0.0, init_scale)
-        self.decoder.weight.data.normal_(0.0, init_scale)
+        #self.decoder.weight.data.normal_(0.0, init_scale)
         zI = torch.ones(self.hidden_dim).to(self.eta.device)
         zm = torch.zeros(self.hidden_dim).to(self.eta.device)
         self.register_buffer('Psi', Psi)

@@ -353,9 +353,9 @@ class LightningLinearVAE(LightningVAE):
 
 
 # Batch correction methods
-class LightningBatchVAE(LightningVAE):
+class LightningBatchLinearVAE(LightningVAE):
     def __init__(self, args):
-        super(LightningBatchVAE, self).__init__(args)
+        super(LightningBatchLinearVAE, self).__init__(args)
         self.hparams = args
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -373,6 +373,31 @@ class LightningBatchVAE(LightningVAE):
             self.hparams.sample_metadata, dtype=str)
         # extract the number of study batches
         self.n_batches = len(set(self.metadata[self.hparams.batch_category]))
+        # initialize over variables
+        n_input = table.shape[0]
+        basis = self.set_basis(n_input, table)
+        self.model = LinearBatchVAE(
+            n_input,
+            hidden_dim=self.hparams.n_latent,
+            batch_dim=self.n_batches,
+            batch_prior=self.batch_prior,
+            basis=basis,
+            encoder_depth=self.hparams.encoder_depth,
+            bias=self.hparams.bias)
+        self.discriminator = nn.Sequential(
+            nn.Linear(args.n_latent, self.n_batches),
+            nn.Softmax())
+        self.gt_eigvectors = None
+        self.gt_eigs = None
+
+    def initialize(self, W, beta):
+        # can't initialize W due to geotorch
+        # https://github.com/Lezcano/geotorch/issues/14
+        #self.model.decoder.weight.data = W.data
+        self.model.beta.weight.data = beta.data
+        # below is just to test the decoder
+        self.model.beta.requires_grad = False
+        #self.model.decoder.weight.requires_grad = False
 
     def to_latent(self, X):
         return self.model.encode(X)
@@ -498,31 +523,3 @@ class LightningBatchVAE(LightningVAE):
                   '(must have same number of dimensions as `train-biom`)'),
             required=False, type=str, default=None)
         return parser
-
-
-class LightningBatchLinearVAE(LightningBatchVAE, LightningLinearVAE):
-    def __init__(self, args):
-        LightningBatchVAE.__init__(self, args)
-        LightningLinearVAE.__init__(self, args)
-        self.hparams = args
-        table = load_table(self.hparams.train_biom)
-        n_input = table.shape[0]
-        basis = self.set_basis(n_input, table)
-        self.model = LinearBatchVAE(
-            n_input,
-            hidden_dim=self.hparams.n_latent,
-            batch_dim=self.n_batches,
-            batch_prior=self.batch_prior,
-            basis=basis,
-            encoder_depth=self.hparams.encoder_depth,
-            bias=self.hparams.bias
-        )
-        self.discriminator = nn.Sequential(
-            nn.Linear(args.n_latent, self.n_batches),
-            nn.Softmax())
-        self.gt_eigvectors = None
-        self.gt_eigs = None
-
-    def initialize(self, W, beta):
-        self.decoder.weight.data = W
-        self.beta.weight.data = beta

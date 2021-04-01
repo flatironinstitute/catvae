@@ -16,36 +16,31 @@ import geotorch
 LOG_2_PI = np.log(2.0 * np.pi)
 
 
-class LinearVAE(nn.Module):
+def get_basis(input_dim, basis=None):
+    if basis is None:
+        tree = random_linkage(input_dim)
+        basis = sparse_balance_basis(tree)[0].copy()
+    indices = np.vstack((basis.row, basis.col))
+    Psi = torch.sparse_coo_tensor(
+        indices.copy(), basis.data.astype(np.float32).copy(),
+        requires_grad=False).coalesce()
+    return Psi
 
-    def __init__(self, input_dim, hidden_dim, init_scale=0.001,
-                 encoder_depth=1,
-                 basis=None, bias=False):
-        super(LinearVAE, self).__init__()
-        self.bias = bias
-        self.hidden_dim = hidden_dim
 
-        if basis is None:
-            tree = random_linkage(input_dim)
-            basis = sparse_balance_basis(tree)[0].copy()
-        indices = np.vstack((basis.row, basis.col))
-        Psi = torch.sparse_coo_tensor(
-            indices.copy(), basis.data.astype(np.float32).copy(),
-            requires_grad=False).coalesce()
-        # note this line corresponds to the true input dim
-        self.input_dim = Psi.shape[0]
-        self.register_buffer('Psi', Psi)
-
-        if encoder_depth > 1:
+class Encoder(nn.Module):
+    def __init__(self, input_dim, hidden_dim, bias=False,
+                 depth=1, init_scale=0.001):
+        super(Encoder, self).__init__()
+        if depth > 1:
             self.first_encoder = nn.Linear(
-                self.input_dim, hidden_dim, bias=self.bias)
-            num_encoder_layers = encoder_depth
+                input_dim, hidden_dim, bias=bias)
+            num_encoder_layers = depth
             layers = []
             layers.append(self.first_encoder)
             for layer_i in range(num_encoder_layers - 1):
                 layers.append(nn.Softplus())
                 layers.append(
-                    nn.Linear(hidden_dim, hidden_dim, bias=self.bias))
+                    nn.Linear(hidden_dim, hidden_dim, bias=bias))
             self.encoder = nn.Sequential(*layers)
 
             # initialize
@@ -54,17 +49,38 @@ class LinearVAE(nn.Module):
                     encoder_layer.weight.data.normal_(0.0, init_scale)
 
         else:
-            self.encoder = nn.Linear(self.input_dim, hidden_dim, bias=self.bias)
+            self.encoder = nn.Linear(
+                input_dim, hidden_dim, bias=bias)
             self.encoder.weight.data.normal_(0.0, init_scale)
 
+    def forward(self, x):
+        return self.encoder(x)
+
+
+class LinearVAE(nn.Module):
+
+    def __init__(self, input_dim, hidden_dim, init_scale=0.001,
+                 encoder_depth=1,
+                 basis=None, bias=False):
+        super(LinearVAE, self).__init__()
+        self.bias = bias
+        self.hidden_dim = hidden_dim
+        Psi = get_basis(input_dim, basis).coalesce()
+        # note this line corresponds to the true input dim
+        self.input_dim = Psi.shape[0]
+        self.register_buffer('Psi', Psi)
+        self.encoder = Encoder(self.input_dim, hidden_dim, init_scale)
         self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=self.bias)
-        geotorch.grassmannian(self.decoder, 'weight')
+        # geotorch.grassmannian(self.decoder, 'weight')
         self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
 
     def gaussian_kl(self, z_mean, z_logvar):
-        return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
+        #return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
+        x = Normal(0, 1)
+        y = Normal(z_mean, torch.exp(z_logvar))
+        return - kl_divergence(x, y)
 
     def gaussian_kl2(self, m1, s1, m2, s2):
         x = Normal(m1, s1)
@@ -87,10 +103,11 @@ class LinearVAE(nn.Module):
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
-        kl_div = (-self.gaussian_kl(
-            z_mean, self.variational_logvars)).mean(0).sum()
-        recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
-        loss = kl_div + recon_loss
+        kl_div = self.gaussian_kl(
+            z_mean, self.variational_logvars).mean(0).sum()
+        recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
+        elbo = kl_div + recon_loss
+        loss = - elbo
         return loss
 
     def get_reconstruction_loss(self, x):
@@ -121,11 +138,23 @@ class LinearBatchVAE(LinearVAE):
            Normal variance priors for batch effects of shape D
         """
         super(LinearBatchVAE, self).__init__(
-            input_dim, hidden_dim, init_scale,
-            basis=basis, encoder_depth=encoder_depth,
+            input_dim, hidden_dim,
+            init_scale, basis=basis, encoder_depth=encoder_depth,
             bias=bias)
+        Psi = get_basis(input_dim, basis).coalesce()
+        self.register_buffer('Psi', Psi)
+        self.input_dim = self.Psi.shape[0]
+        encoder_dim = self.input_dim + batch_dim
+        latent_dim = hidden_dim
+        self.encoder = Encoder(encoder_dim, latent_dim)
+        self.decoder = nn.Linear(latent_dim, self.input_dim, bias=self.bias)
+        # geotorch.grassmannian(self.decoder, 'weight')
+        self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
+        self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
+
         # Need to create a separate matrix, since abs doesn't work on
         # sparse matrices :(
+        self.batch_dim = batch_dim
         posPsi = torch.sparse.FloatTensor(
             self.Psi.indices(), torch.abs(self.Psi.values()))
         batch_prior = ilr(batch_prior, posPsi)
@@ -152,28 +181,30 @@ class LinearBatchVAE(LinearVAE):
         bx = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
         hbx = torch.cat((bx, hx), dim=1)
-        z_mean = self.encoder(hx)
+        z_mean = self.encoder(hbx)
         # sample z
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         # sample beta
-        eps = torch.normal(torch.zeros_like(bx), 1.0)
         batch_effects = self.beta(b)
+        eps = torch.normal(torch.zeros_like(batch_effects), 1.0)
         b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
-
+        # decoder
         x_out = self.decoder(z_sample)
         x_out += b_sample  # Add batch effects back in
         # Weight by latent prior
-        kl_div_z = (-self.gaussian_kl(
-            z_mean, self.variational_logvars)).mean(0).sum()
+        kl_div_z = self.gaussian_kl(
+            z_mean, self.variational_logvars).mean(0).sum()
         # Weight by batch prior
-        kl_div_b = (-self.gaussian_kl2(
-            batch_effects, torch.exp(self.batch_logvars),
-            torch.zeros_like(self.batch_prior), self.batch_prior
-        )).mean(0).sum()
-        recon_loss = (-self.recon_model_loglik(x, x_out)).mean(0).sum()
-        loss = recon_loss + kl_div_z + kl_div_b
-        return loss, recon_loss, kl_div_z, kl_div_b
+        # kl_div_b = self.gaussian_kl2(
+        #     batch_effects, torch.exp(self.batch_logvars),
+        #     torch.zeros_like(self.batch_prior), self.batch_prior
+        # ).mean(0).sum()
+        kl_div_b = 0
+        recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
+        elbo = recon_loss + kl_div_z + kl_div_b
+        loss = - elbo
+        return loss, - recon_loss, - kl_div_z, - kl_div_b
 
     def get_reconstruction_loss(self, x, b):
         bx = self.batch_embed(b)
