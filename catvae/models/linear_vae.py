@@ -5,7 +5,7 @@ https://github.com/XuchanBao/linear-ae
 """
 import torch
 import torch.nn as nn
-from catvae.composition import ilr
+from catvae.composition import ilr, closure
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
 from torch.distributions import Multinomial, Normal
@@ -163,13 +163,13 @@ class LinearBatchVAE(LinearVAE):
             input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
             bias=bias)
-        Psi = get_basis(input_dim, basis).coalesce()
+        Psi = get_basis(input_dim, basis).coalesce()  # D-1 x D
         self.register_buffer('Psi', Psi)
-        self.input_dim = self.Psi.shape[0]
-        encoder_dim = self.input_dim + hidden_dim
-        self.encoder = Encoder(encoder_dim, hidden_dim, latent_dim,
+        self.n_features = input_dim
+        self.ilr_dim = self.Psi.shape[0]
+        self.encoder = Encoder(self.ilr_dim, hidden_dim, latent_dim,
                                depth=encoder_depth)
-        self.decoder = nn.Linear(latent_dim, self.input_dim, bias=self.bias)
+        self.decoder = nn.Linear(latent_dim, self.ilr_dim, bias=self.bias)
         geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
@@ -180,15 +180,22 @@ class LinearBatchVAE(LinearVAE):
             self.Psi.indices(), torch.abs(self.Psi.values()))
         batch_prior = ilr(batch_prior, posPsi)
         self.register_buffer('batch_prior', batch_prior)
-        self.batch_logvars = nn.Parameter(torch.zeros(self.input_dim))
-        self.batch_embed = nn.Embedding(batch_dim, hidden_dim)
-        self.beta = nn.Embedding(batch_dim, self.input_dim)
+        self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
+        self.input_embed = nn.Parameter(
+            torch.zeros(self.n_features, hidden_dim))
+        self.ffn = nn.Linear(hidden_dim, 1, bias=True)
+        self.beta = nn.Embedding(batch_dim, self.ilr_dim)
 
     def encode(self, x, b):
-        bx = self.batch_embed(b)
-        hx = ilr(self.imputer(x), self.Psi)
-        hbx = torch.cat((bx, hx), dim=1)
-        z = self.encoder(hbx)
+        # use feed-forward network to project to
+        # log-odds space
+        a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
+        x_ = a[:, :, None] * self.input_embed     # B x D x H
+        fx = self.ffn(x_).squeeze()               # B x D x 1
+        hx = (self.Psi @ fx.T).T                  # B x D-1
+        batch_effects = self.beta(b)              # B x D-1
+        hx = hx - batch_effects
+        z = self.encoder(hx)
         return z
 
     def forward(self, x, b):
@@ -201,17 +208,15 @@ class LinearBatchVAE(LinearVAE):
         b : torch.Tensor
             Batch indices of shape C
         """
-        bx = self.batch_embed(b)
-        hx = ilr(self.imputer(x), self.Psi)
-        hbx = torch.cat((bx, hx), dim=1)
-        z_mean = self.encoder(hbx)
+        z_mean = self.encode(x, b)
         # sample z
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         # sample beta
         batch_effects = self.beta(b)
         eps = torch.normal(torch.zeros_like(batch_effects), 1.0)
-        b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
+        b_sample = batch_effects  # TODO: need to uncomment later
+        # b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
         # decoder
         x_out = self.decoder(z_sample)
         x_out += b_sample  # Add batch effects back in
@@ -230,10 +235,7 @@ class LinearBatchVAE(LinearVAE):
         return loss, - recon_loss, - kl_div_z, - kl_div_b
 
     def get_reconstruction_loss(self, x, b):
-        bx = self.batch_embed(b)
-        hx = ilr(self.imputer(x), self.Psi)
-        hbx = torch.cat((bx, hx), dim=1)
-        z_mean = self.encoder(hbx)
+        z_mean = self.encode(x, b)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         batch_effects = self.beta(b)
