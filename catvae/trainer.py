@@ -220,6 +220,9 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--n-latent', help='Latent embedding dimension.',
             required=False, type=int, default=10)
+        parser.add_argument(
+            '--n-hidden', help='Encoder dimension.',
+            required=False, type=int, default=64)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
         parser.add_argument(
@@ -347,7 +350,8 @@ class LightningLinearVAE(LightningVAE):
         basis = self.set_basis(n_input, table)
         self.model = LinearVAE(
             n_input, basis=basis,
-            hidden_dim=self.hparams.n_latent,
+            hidden_dim=self.hparams.n_hidden,
+            latent_dim=self.hparams.n_latent,
             bias=self.hparams.bias)
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -379,25 +383,29 @@ class LightningBatchLinearVAE(LightningVAE):
         basis = self.set_basis(n_input, table)
         self.model = LinearBatchVAE(
             n_input,
-            hidden_dim=self.hparams.n_latent,
+            hidden_dim=self.hparams.n_hidden,
+            latent_dim=self.hparams.n_latent,
             batch_dim=self.n_batches,
             batch_prior=self.batch_prior,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias)
-        self.discriminator = nn.Sequential(
-            nn.Linear(args.n_latent, self.n_batches),
-            nn.Softmax())
+        # self.discriminator = nn.Sequential(
+        #     nn.Linear(args.n_latent, self.n_batches),
+        #     nn.Softmax())
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-    def initialize(self, W, beta):
-        # can't initialize W due to geotorch
+    def initialize_batch(self, beta):
+        # apparently this is not recommended, but fuck it
+        self.model.beta.weight.data = beta.data
+        self.model.beta.requires_grad = False
+        self.model.beta.weight.requires_grad = False
+
+    def initialize_decoder(self, W):
+        # can't initialize easily W due to geotorch
         # https://github.com/Lezcano/geotorch/issues/14
-        self.model.decoder.weight.data = W.data
-        #self.model.beta.weight.data = beta.data
-        # below is just to test the decoder
-        #self.model.beta.requires_grad = False
+        self.model.decoder.weight = W
         self.model.decoder.weight.requires_grad = False
 
     def to_latent(self, X):
@@ -454,6 +462,8 @@ class LightningBatchLinearVAE(LightningVAE):
     def configure_optimizers(self):
         opt_g = torch.optim.Adam(self.model.parameters(),
                                  lr=self.hparams.learning_rate)
+        # opt_g = torch.optim.SGD(self.model.parameters(),
+        #                         lr=self.hparams.learning_rate)
         if self.hparams.scheduler == 'cosine_warmup':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
@@ -510,6 +520,23 @@ class LightningBatchLinearVAE(LightningVAE):
             self.logger.experiment.add_scalar(
                 m, rec_err, self.global_step)
             tensorboard_logs[m] = rec_err
+
+        if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
+            ms = metric_subspace(self.model, self.gt_eigvectors, self.gt_eigs)
+            ma = metric_alignment(self.model, self.gt_eigvectors)
+            mp = metric_procrustes(self.model, self.gt_eigvectors)
+            mr = metric_pairwise(self.model, self.gt_eigvectors, self.gt_eigs)
+            tlog = {'subspace_distance': ms, 'alignment': ma, 'procrustes': mp}
+            self.logger.experiment.add_scalar(
+                'procrustes', mp, self.global_step)
+            self.logger.experiment.add_scalar(
+                'pairwise_r', mr, self.global_step)
+            self.logger.experiment.add_scalar(
+                'subspace_distance', ms, self.global_step)
+            self.logger.experiment.add_scalar(
+                'alignment', ma, self.global_step)
+            tensorboard_logs = {**tensorboard_logs, **tlog}
+
         return {'val_loss': rec_err, 'log': tensorboard_logs}
 
     @staticmethod

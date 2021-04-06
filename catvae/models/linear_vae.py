@@ -28,8 +28,10 @@ def get_basis(input_dim, basis=None):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, bias=False,
-                 depth=1, init_scale=0.001):
+    def __init__(self, input_dim : int,
+                 hidden_dim : int,
+                 latent_dim : int, bias : bool=False,
+                 depth : int = 1, init_scale : float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
             self.first_encoder = nn.Linear(
@@ -37,21 +39,33 @@ class Encoder(nn.Module):
             num_encoder_layers = depth
             layers = []
             layers.append(self.first_encoder)
-            for layer_i in range(num_encoder_layers - 1):
+            for layer_i in range(num_encoder_layers - 2):
                 layers.append(nn.Softplus())
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=bias))
+            layers.append(nn.Linear(hidden_dim, latent_dim, bias=bias))
             self.encoder = nn.Sequential(*layers)
 
             # initialize
             for encoder_layer in self.encoder:
                 if isinstance(encoder_layer, nn.Linear):
                     encoder_layer.weight.data.normal_(0.0, init_scale)
-
-        else:
+        elif depth == 2:
+            layers = nn.Sequential(*[
+                nn.Linear(input_dim, hidden_dim, bias=bias),
+                nn.Softplus(),
+                nn.Linear(hidden_dim, latent_dim, bias=bias)
+            ])
+            self.encoder = nn.Sequential(*layers)
+            for encoder_layer in self.encoder:
+                if isinstance(encoder_layer, nn.Linear):
+                    encoder_layer.weight.data.normal_(0.0, init_scale)
+        elif depth == 1:
             self.encoder = nn.Linear(
-                input_dim, hidden_dim, bias=bias)
+                input_dim, latent_dim, bias=bias)
             self.encoder.weight.data.normal_(0.0, init_scale)
+        else:
+            raise ValueError(f'Depth of {depth} is not appropriate.')
 
     def forward(self, x):
         return self.encoder(x)
@@ -59,25 +73,30 @@ class Encoder(nn.Module):
 
 class LinearVAE(nn.Module):
 
-    def __init__(self, input_dim, hidden_dim, init_scale=0.001,
-                 encoder_depth=1,
+    def __init__(self, input_dim, hidden_dim, latent_dim=None,
+                 init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False):
         super(LinearVAE, self).__init__()
+        if latent_dim is None:
+            latent_dim = hidden_dim
         self.bias = bias
         self.hidden_dim = hidden_dim
         Psi = get_basis(input_dim, basis).coalesce()
         # note this line corresponds to the true input dim
         self.input_dim = Psi.shape[0]
         self.register_buffer('Psi', Psi)
-        self.encoder = Encoder(self.input_dim, hidden_dim, init_scale)
-        self.decoder = nn.Linear(hidden_dim, self.input_dim, bias=self.bias)
-        # geotorch.grassmannian(self.decoder, 'weight')
+        self.encoder = Encoder(
+            self.input_dim, hidden_dim, latent_dim,
+            bias=bias, depth=encoder_depth, init_scale=init_scale)
+        self.decoder = nn.Linear(
+            latent_dim, self.input_dim, bias=self.bias)
+        geotorch.grassmannian(self.decoder, 'weight')
         self.imputer = lambda x: x + 1
-        self.variational_logvars = nn.Parameter(torch.zeros(hidden_dim))
+        self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
 
     def gaussian_kl(self, z_mean, z_logvar):
-        #return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
+        # return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
         x = Normal(0, 1)
         y = Normal(z_mean, torch.exp(z_logvar))
         return - kl_divergence(x, y)
@@ -121,7 +140,8 @@ class LinearVAE(nn.Module):
 
 
 class LinearBatchVAE(LinearVAE):
-    def __init__(self, input_dim, hidden_dim, batch_dim, batch_prior,
+    def __init__(self, input_dim, hidden_dim, latent_dim,
+                 batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False):
         """ Account for batch effects.
@@ -131,27 +151,28 @@ class LinearBatchVAE(LinearVAE):
         input_dim : int
            Number of dimensions for input counts
         hidden_dim : int
-           Number of hidden dimensions
+           Number of hidden dimensions within encoder
+        latent_dim : int
+           Number of hidden dimensions within latent space
         batch_dim : int
            Number of batches (i.e. studies) to do batch correction
         batch_priors : np.array of float
            Normal variance priors for batch effects of shape D
         """
         super(LinearBatchVAE, self).__init__(
-            input_dim, hidden_dim,
+            input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
             bias=bias)
         Psi = get_basis(input_dim, basis).coalesce()
         self.register_buffer('Psi', Psi)
         self.input_dim = self.Psi.shape[0]
-        encoder_dim = self.input_dim + batch_dim
-        latent_dim = hidden_dim
-        self.encoder = Encoder(encoder_dim, latent_dim)
+        encoder_dim = self.input_dim + hidden_dim
+        self.encoder = Encoder(encoder_dim, hidden_dim, latent_dim,
+                               depth=encoder_depth)
         self.decoder = nn.Linear(latent_dim, self.input_dim, bias=self.bias)
-        # geotorch.grassmannian(self.decoder, 'weight')
+        geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-
         # Need to create a separate matrix, since abs doesn't work on
         # sparse matrices :(
         self.batch_dim = batch_dim
@@ -160,12 +181,14 @@ class LinearBatchVAE(LinearVAE):
         batch_prior = ilr(batch_prior, posPsi)
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.input_dim))
-        self.batch_embed = nn.Embedding(batch_dim, batch_dim)
+        self.batch_embed = nn.Embedding(batch_dim, hidden_dim)
         self.beta = nn.Embedding(batch_dim, self.input_dim)
 
-    def encode(self, x):
+    def encode(self, x, b):
+        bx = self.batch_embed(b)
         hx = ilr(self.imputer(x), self.Psi)
-        z = self.encoder(hx)
+        hbx = torch.cat((bx, hx), dim=1)
+        z = self.encoder(hbx)
         return z
 
     def forward(self, x, b):
@@ -196,11 +219,11 @@ class LinearBatchVAE(LinearVAE):
         kl_div_z = self.gaussian_kl(
             z_mean, self.variational_logvars).mean(0).sum()
         # Weight by batch prior
-        # kl_div_b = 0
-        kl_div_b = self.gaussian_kl2(
-            batch_effects, torch.exp(self.batch_logvars),
-            torch.zeros_like(self.batch_prior), self.batch_prior
-        ).mean(0).sum()
+        kl_div_b = 0
+        # kl_div_b = self.gaussian_kl2(
+        #     batch_effects, torch.exp(self.batch_logvars),
+        #     torch.zeros_like(self.batch_prior), self.batch_prior
+        # ).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
         elbo = recon_loss + kl_div_z + kl_div_b
         loss = - elbo
