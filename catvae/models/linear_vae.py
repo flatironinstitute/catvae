@@ -163,77 +163,94 @@ class LinearBatchVAE(LinearVAE):
             input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
             bias=bias)
-        Psi = get_basis(input_dim, basis).coalesce()  # D-1 x D
-        self.register_buffer('Psi', Psi)
-        self.n_features = input_dim
-        self.ilr_dim = self.Psi.shape[0]
-        self.encoder = Encoder(self.ilr_dim, hidden_dim, latent_dim,
-                               depth=encoder_depth)
-        self.decoder = nn.Linear(latent_dim, self.ilr_dim, bias=self.bias)
-        geotorch.grassmannian(self.decoder, 'weight')
-        self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
-        self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-        # Need to create a separate matrix, since abs doesn't work on
-        # sparse matrices :(
-        self.batch_dim = batch_dim
-        posPsi = torch.sparse.FloatTensor(
-            self.Psi.indices(), torch.abs(self.Psi.values()))
-        batch_prior = ilr(batch_prior, posPsi)
-        self.register_buffer('batch_prior', batch_prior)
-        self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
-        self.input_embed = nn.Parameter(
-            torch.zeros(self.n_features, hidden_dim))
+        # Psi = get_basis(input_dim, basis).coalesce()  # D-1 x D
+        # self.register_buffer('Psi', Psi)
+        # self.n_features = input_dim
+        # self.ilr_dim = self.Psi.shape[0]
+        # self.encoder = Encoder(self.ilr_dim, hidden_dim, latent_dim,
+        #                        depth=encoder_depth)
+        # self.decoder = nn.Linear(latent_dim, self.ilr_dim, bias=self.bias)
+        # geotorch.grassmannian(self.decoder, 'weight')
+        # self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
+        # self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
+        # # Need to create a separate matrix, since abs doesn't work on
+        # # sparse matrices :(
+        # self.batch_dim = batch_dim
+        # posPsi = torch.sparse.FloatTensor(
+        #     self.Psi.indices(), torch.abs(self.Psi.values()))
+        # batch_prior = ilr(batch_prior, posPsi)
+        # self.register_buffer('batch_prior', batch_prior)
+        # self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
+        # self.input_embed = nn.Parameter(
+        #     torch.zeros(self.n_features, hidden_dim))
         # self.ffn = nn.Linear(hidden_dim, 1, bias=True)
-        self.beta = nn.Embedding(batch_dim, self.ilr_dim)
+        self.beta = nn.Embedding(batch_dim, input_dim - 1)
 
     def encode(self, x, b):
         # use feed-forward network to project to
         # log-odds space
+        # option 1
         # a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
         # x_ = a[:, :, None] * self.input_embed     # B x D x H
         # fx = self.ffn(x_).squeeze()               # B x D x 1
-        fx = torch.log(x + 1)                     # ILR transform for testing
-        hx = (self.Psi @ fx.T).T                  # B x D-1
+        # option 2
+        # fx = torch.log(x + 1)                     # ILR transform for testing
+        # hx = (self.Psi @ fx.T).T                  # B x D-1
+        hx = ilr(self.imputer(x), self.Psi)
         batch_effects = self.beta(b)              # B x D-1
         hx = hx - batch_effects
         z = self.encoder(hx)
         return z
 
     def forward(self, x, b):
-        """ Forward pass
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input counts of shape b x D
-        b : torch.Tensor
-            Batch indices of shape C
-        """
-        z_mean = self.encode(x, b)
-        # sample z
+        x_ = ilr(self.imputer(x), self.Psi)
+        batch_effects = self.beta(b)
+        z_mean = self.encoder(x_ - batch_effects)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
-        # sample beta
-        batch_effects = self.beta(b)
-        eps = torch.normal(torch.zeros_like(batch_effects), 1.0)
-        b_sample = batch_effects  # TODO: need to uncomment later
-        # b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
-        # decoder
-        x_out = self.decoder(z_sample)
-        x_out += b_sample  # Add batch effects back in
-        # Weight by latent prior
-        kl_div_z = self.gaussian_kl(
+        x_out = self.decoder(z_sample) + batch_effects
+        kl_div = self.gaussian_kl(
             z_mean, self.variational_logvars).mean(0).sum()
-        # Weight by batch prior
-        kl_div_b = 0
-        # kl_div_b = self.gaussian_kl2(
-        #     batch_effects, torch.exp(self.batch_logvars),
-        #     torch.zeros_like(self.batch_prior), self.batch_prior
-        # ).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
-        elbo = recon_loss + kl_div_z + kl_div_b
+        elbo = kl_div + recon_loss
         loss = - elbo
-        return loss, - recon_loss, - kl_div_z, - kl_div_b
+        return loss, -recon_loss, -kl_div, 0
+
+    # def forward(self, x, b):
+    #     """ Forward pass
+    #
+    #     Parameters
+    #     ----------
+    #     x : torch.Tensor
+    #         Input counts of shape b x D
+    #     b : torch.Tensor
+    #         Batch indices of shape C
+    #     """
+    #     z_mean = self.encode(x, b)
+    #     # sample z
+    #     eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+    #     z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+    #     # sample beta
+    #     batch_effects = self.beta(b)
+    #     eps = torch.normal(torch.zeros_like(batch_effects), 1.0)
+    #     b_sample = batch_effects  # TODO: need to uncomment later
+    #     # b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
+    #     # decoder
+    #     x_out = self.decoder(z_sample)
+    #     x_out += b_sample  # Add batch effects back in
+    #     # Weight by latent prior
+    #     kl_div_z = self.gaussian_kl(
+    #         z_mean, self.variational_logvars).mean(0).sum()
+    #     # Weight by batch prior
+    #     kl_div_b = 0
+    #     # kl_div_b = self.gaussian_kl2(
+    #     #     batch_effects, torch.exp(self.batch_logvars),
+    #     #     torch.zeros_like(self.batch_prior), self.batch_prior
+    #     # ).mean(0).sum()
+    #     recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
+    #     elbo = recon_loss + kl_div_z + kl_div_b
+    #     loss = - elbo
+    #     return loss, - recon_loss, - kl_div_z, - kl_div_b
 
     def get_reconstruction_loss(self, x, b):
         z_mean = self.encode(x, b)
