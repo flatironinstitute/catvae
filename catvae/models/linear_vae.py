@@ -173,18 +173,20 @@ class LinearBatchVAE(LinearVAE):
         # geotorch.grassmannian(self.decoder, 'weight')
         # self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         # self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-        # # Need to create a separate matrix, since abs doesn't work on
-        # # sparse matrices :(
-        # self.batch_dim = batch_dim
-        # posPsi = torch.sparse.FloatTensor(
-        #     self.Psi.indices(), torch.abs(self.Psi.values()))
-        # batch_prior = ilr(batch_prior, posPsi)
-        # self.register_buffer('batch_prior', batch_prior)
-        # self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
+
+        # Need to create a separate matrix, since abs doesn't work on
+        # sparse matrices :(
+        self.batch_dim = batch_dim
+        self.ilr_dim = input_dim - 1
+        posPsi = torch.sparse.FloatTensor(
+            self.Psi.indices(), torch.abs(self.Psi.values()))
+        batch_prior = ilr(batch_prior, posPsi)
+        self.register_buffer('batch_prior', batch_prior)
+        self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         # self.input_embed = nn.Parameter(
         #     torch.zeros(self.n_features, hidden_dim))
         # self.ffn = nn.Linear(hidden_dim, 1, bias=True)
-        self.beta = nn.Embedding(batch_dim, input_dim - 1)
+        self.beta = nn.Embedding(batch_dim, self.ilr_dim)
 
     def encode(self, x, b):
         # use feed-forward network to project to
@@ -208,13 +210,19 @@ class LinearBatchVAE(LinearVAE):
         z_mean = self.encoder(x_ - batch_effects)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
-        x_out = self.decoder(z_sample) + batch_effects
-        kl_div = self.gaussian_kl(
+        eps = torch.normal(torch.zeros_like(batch_effects), 1.0)
+        b_sample = batch_effects + eps * torch.exp(0.5 * self.batch_logvars)
+        x_out = self.decoder(z_sample) + b_sample
+        kl_div_z = self.gaussian_kl(
             z_mean, self.variational_logvars).mean(0).sum()
+        kl_div_b = self.gaussian_kl2(
+            batch_effects, torch.exp(self.batch_logvars),
+            torch.zeros_like(self.batch_prior), self.batch_prior
+        ).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
-        elbo = kl_div + recon_loss
+        elbo = kl_div_z + kl_div_b + recon_loss
         loss = - elbo
-        return loss, -recon_loss, -kl_div, 0
+        return loss, -recon_loss, -kl_div_z, -kl_div_b
 
     # def forward(self, x, b):
     #     """ Forward pass
