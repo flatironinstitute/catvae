@@ -183,15 +183,16 @@ class LinearBatchVAE(LinearVAE):
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         self.input_embed = nn.Parameter(
             torch.zeros(self.n_features, hidden_dim))
-        self.ffn = nn.Linear(hidden_dim, 1, bias=True)
+        # self.ffn = nn.Linear(hidden_dim, 1, bias=True)
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
 
     def encode(self, x, b):
         # use feed-forward network to project to
         # log-odds space
-        a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
-        x_ = a[:, :, None] * self.input_embed     # B x D x H
-        fx = self.ffn(x_).squeeze()               # B x D x 1
+        # a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
+        # x_ = a[:, :, None] * self.input_embed     # B x D x H
+        # fx = self.ffn(x_).squeeze()               # B x D x 1
+        fx = torch.log(x + 1)                     # ILR transform for testing
         hx = (self.Psi @ fx.T).T                  # B x D-1
         batch_effects = self.beta(b)              # B x D-1
         hx = hx - batch_effects
