@@ -436,7 +436,7 @@ class LightningBatchLinearVAE(LightningVAE):
     def test_dataloader(self):
         return self._dataloader(self.hparams.test_biom, shuffle=False)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx, optimizer_idx):
         counts, batch_ids = batch
         counts = counts.to(self.device)
         batch_ids = batch_ids.to(self.device)
@@ -460,16 +460,19 @@ class LightningBatchLinearVAE(LightningVAE):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        opt_g = torch.optim.Adam(self.model.parameters(),
-                                 lr=self.hparams.learning_rate)
-        # opt_g = torch.optim.SGD(self.model.parameters(),
-        #                         lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine_warmup':
+        opt_g = torch.optim.Adam(
+            list(self.model.encoder.parameters()) + \
+            list(self.model.decoder.parameters()),
+            lr=self.hparams.learning_rate)
+        opt_b = torch.optim.Adam(
+            list(self.model.beta.parameters()) + [self.model.batch_logvars],
+            lr=self.hparams.learning_rate)
+        if self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
         elif self.hparams.scheduler == 'cosine':
             scheduler = CosineAnnealingLR(
-                opt_g, T_max=50)
+                opt_g, T_max=self.hparams.steps_per_batch * 10)
         elif self.hparams.scheduler == 'steplr':
             m = 1e-1  # maximum learning rate
             steps = int(np.log2(m / self.hparams.learning_rate))
@@ -477,15 +480,16 @@ class LightningBatchLinearVAE(LightningVAE):
             scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'inv_steplr':
             m = 1e-1  # maximum learning rate
+            opt_g = torch.optim.Adam(
+                self.model.parameters(), lr=m)
             steps = int(np.log2(m / self.hparams.learning_rate))
             steps = self.hparams.epochs // steps
             scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'none':
-            return opt_g
-        else:
-            s = self.hparams.scheduler
-            raise ValueError(f'{s} is not implemented.')
-        return [opt_g], [scheduler]
+            return [opt_g, opt_b]
+        scheduler_b = CosineAnnealingLR(
+            opt_g, T_max=self.hparams.steps_per_batch)
+        return [opt_g, opt_b], [scheduler, scheduler_b]
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
