@@ -96,14 +96,14 @@ class LinearVAE(nn.Module):
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
 
     def gaussian_kl(self, z_mean, z_logvar):
-        # return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
-        x = Normal(0, 1)
-        y = Normal(z_mean, torch.exp(z_logvar))
-        return - kl_divergence(x, y)
+        return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
+        # x = Normal(0, 1)
+        # y = Normal(z_mean, torch.exp(z_logvar))
+        # return - kl_divergence(x, y)
 
     def gaussian_kl2(self, m1, s1, m2, s2):
-        x = Normal(m1, s1)
-        y = Normal(m2, s2)
+        x = Normal(m1, torch.exp(0.5 * s1))
+        y = Normal(m2, torch.exp(0.5 * s2))
         return - kl_divergence(x, y)
 
     def recon_model_loglik(self, x_in, x_out):
@@ -216,7 +216,7 @@ class LinearBatchVAE(LinearVAE):
         kl_div_z = self.gaussian_kl(
             z_mean, self.variational_logvars).mean(0).sum()
         kl_div_b = self.gaussian_kl2(
-            batch_effects, torch.exp(self.batch_logvars),
+            batch_effects, self.batch_logvars,
             torch.zeros_like(self.batch_prior), self.batch_prior
         ).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()

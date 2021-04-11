@@ -467,7 +467,7 @@ class LightningBatchLinearVAE(LightningVAE):
         opt_b = torch.optim.Adam(
             list(self.model.beta.parameters()) + [self.model.batch_logvars],
             lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine':
+        if self.hparams.scheduler == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
         elif self.hparams.scheduler == 'cosine':
