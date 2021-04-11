@@ -180,7 +180,8 @@ class LinearBatchVAE(LinearVAE):
         self.ilr_dim = input_dim - 1
         posPsi = torch.sparse.FloatTensor(
             self.Psi.indices(), torch.abs(self.Psi.values()))
-        batch_prior = ilr(batch_prior, posPsi)
+        batch_prior = torch.log((posPsi @ batch_prior.T).T)
+        print(torch.min(batch_prior), torch.max(batch_prior))
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         # self.input_embed = nn.Parameter(

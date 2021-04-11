@@ -367,11 +367,14 @@ class LightningBatchLinearVAE(LightningVAE):
         # we'll read in the metadata / table twice, whatever
         # We may need to adjust this in the future.
         table = load_table(self.hparams.train_biom)
-        batch_prior = pd.read_table(self.hparams.batch_prior, dtype=str)
+        batch_prior = pd.read_table(self.hparams.batch_prior, dtype=str, header=None)
         batch_prior = batch_prior.set_index(batch_prior.columns[0])
-        batch_prior = batch_prior.loc[table.ids(axis='observation')]
-        # TODO: impute with 1 for now, will need to think about this
-        batch_prior = batch_prior.fillna(1)
+        batch_prior = batch_prior.reindex(table.ids(axis='observation'))
+        batch_prior = batch_prior.fillna(5) # fill with 5 for missing values
+        if table.shape[0] != len(batch_prior):
+            raise ValueError(f'Features ({table.shape[0]}) in table do not match'
+                             f'features {len(batch_prior)} in batch prior')
+        #batch_prior = batch_prior.fillna(5)  # default for missing labels
         batch_prior = batch_prior.values.astype(np.float64).reshape(1, -1)
         self.batch_prior = torch.Tensor(batch_prior).float()
         self.metadata = pd.read_table(
