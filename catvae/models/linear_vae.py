@@ -163,24 +163,9 @@ class LinearBatchVAE(LinearVAE):
             input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
             bias=bias)
-        # Psi = get_basis(input_dim, basis).coalesce()  # D-1 x D
-        # self.register_buffer('Psi', Psi)
-        # self.n_features = input_dim
-        # self.ilr_dim = self.Psi.shape[0]
-        # self.encoder = Encoder(self.ilr_dim, hidden_dim, latent_dim,
-        #                        depth=encoder_depth)
-        # self.decoder = nn.Linear(latent_dim, self.ilr_dim, bias=self.bias)
-        # geotorch.grassmannian(self.decoder, 'weight')
-        # self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
-        # self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-
-        # Need to create a separate matrix, since abs doesn't work on
-        # sparse matrices :(
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
-        posPsi = torch.sparse.FloatTensor(
-            self.Psi.indices(), torch.abs(self.Psi.values()))
-        batch_prior = ilr(batch_prior, posPsi)
+        batch_prior = batch_prior
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         # self.input_embed = nn.Parameter(

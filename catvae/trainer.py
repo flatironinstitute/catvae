@@ -367,12 +367,13 @@ class LightningBatchLinearVAE(LightningVAE):
         # we'll read in the metadata / table twice, whatever
         # We may need to adjust this in the future.
         table = load_table(self.hparams.train_biom)
+        # It is assumed that the batch prior is already synced to
+        # the table
         batch_prior = pd.read_table(self.hparams.batch_prior, dtype=str)
         batch_prior = batch_prior.set_index(batch_prior.columns[0])
-        batch_prior = batch_prior.loc[table.ids(axis='observation')]
-        # TODO: impute with 1 for now, will need to think about this
-        batch_prior = batch_prior.fillna(1)
-        batch_prior = batch_prior.values.astype(np.float64).reshape(1, -1)
+        batch_prior = batch_prior.values.astype(np.float64).reshape(1, -1).squeeze()
+        assert table.shape[0] == len(batch_prior) + 1, (
+            table.shape, batch_prior.shape)
         self.batch_prior = torch.Tensor(batch_prior).float()
         self.metadata = pd.read_table(
             self.hparams.sample_metadata, dtype=str)
