@@ -122,11 +122,11 @@ class LightningVAE(pl.LightningModule):
 
             # Record the actual loss.
             rec_err = self.model.get_reconstruction_loss(batch)
-            tensorboard_logs = {'validation_loss': loss,
+            tensorboard_logs = {'val_loss': loss,
                                 'val_rec_err': rec_err}
 
             # log the learning rate
-            return {'validation_loss': loss, 'log': tensorboard_logs}
+            return {'val_loss': loss, 'log': tensorboard_logs}
 
     def test_step(self, batch, batch_idx):
         pass
@@ -502,17 +502,17 @@ class LightningBatchLinearVAE(LightningVAE):
             assert torch.isnan(loss).item() is False
 
             # Record the actual loss.
-            tensorboard_logs = {'validation_loss': loss,
+            tensorboard_logs = {'val_loss': loss,
                                 'val/recon_loss': rec_err,
                                 'val/kl_div_z': kl_div_z,
                                 'val/kl_div_b': kl_div_b,
                                 'val_rec_err': rec_err}
 
             # log the learning rate
-            return {'validation_loss': loss, 'log': tensorboard_logs}
+            return {'val_loss': loss, 'log': tensorboard_logs}
 
     def validation_epoch_end(self, outputs):
-        metrics = ['validation_loss',
+        metrics = ['val_loss',
                    'val/recon_loss',
                    'val/kl_div_z',
                    'val/kl_div_b',
