@@ -242,8 +242,9 @@ class LightningVAE(pl.LightningModule):
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
         parser.add_argument(
-            '--imputer', help='Imputation technique to use.',
-            required=False, type=bool, default=None)
+            '--transform', help=('Specifies transform for preprocessing '
+                                 '(arcsine, pseudocount, rclr)'),
+            required=False, type=str, default='pseudocount')
         parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
@@ -352,7 +353,9 @@ class LightningLinearVAE(LightningVAE):
             n_input, basis=basis,
             hidden_dim=self.hparams.n_hidden,
             latent_dim=self.hparams.n_latent,
-            bias=self.hparams.bias)
+            bias=self.hparams.bias,
+            encoder_depth=self.hparams.encoder_depth,
+            transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -390,10 +393,8 @@ class LightningBatchLinearVAE(LightningVAE):
             batch_prior=self.batch_prior,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
-            bias=self.hparams.bias)
-        # self.discriminator = nn.Sequential(
-        #     nn.Linear(args.n_latent, self.n_batches),
-        #     nn.Softmax())
+            bias=self.hparams.bias,
+            transform=self.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
