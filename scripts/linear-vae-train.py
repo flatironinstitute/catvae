@@ -18,6 +18,7 @@ def main(args):
         model.load_state_dict(checkpoint['state_dict'])
     else:
         model = LightningLinearVAE(args)
+    print(args)
     print(model)
 
     if (args.eigvectors is not None and

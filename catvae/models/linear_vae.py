@@ -27,28 +27,31 @@ class ArcsineEmbed(nn.Module):
         super(ArcsineEmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
-        self.ffn_weights = nn.Parameter(torch.zeros(input_dim, hidden_dim, 1))
-        self.bias = nn.Parameter(torch.zeros(input_dim))
+        self.ffn_weights = nn.Parameter(torch.zeros(input_dim - 1, hidden_dim, 1))
+        self.bias = nn.Parameter(torch.zeros(input_dim - 1))
 
-    def forward(self, x):
+    def forward(self, x, Psi):
         a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
         x_ = a[:, :, None] * self.embed     # B x D x H
+        x_ = (self.Psi @ x_.T).T            # B x D-1
         fx = torch.einsum('bih,ihk -> bik', x_, self.ffn_weights).squeeze()
         return fx + self.bias
+
 
 class CLREmbed(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(ArcsineEmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
-        self.ffn_weights = nn.Parameter(torch.zeros(input_dim, hidden_dim, 1))
-        self.bias = nn.Parameter(torch.zeros(input_dim))
+        self.ffn_weights = nn.Parameter(torch.zeros(input_dim - 1, hidden_dim, 1))
+        self.bias = nn.Parameter(torch.zeros(input_dim - 1))
 
-    def forward(self, x):
+    def forward(self, x, Psi):
         a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
         a = torch.log(closure(x + 1))
         a = a - a.mean(axis=1).reshape(-1, 1)     # center around mean
         x_ = a[:, :, None] * self.embed     # B x D x H
+        x_ = (self.Psi @ x_.T).T            # B x D-1
         fx = torch.einsum('bih,ihk -> bik', x_, self.ffn_weights).squeeze()
         return fx + self.bias
 
@@ -145,10 +148,10 @@ class LinearVAE(nn.Module):
 
     def encode(self, x):
         if self.transform in {'arcsine', 'clr'}:
-            fx = self.input_embed(x)
+            hx = self.input_embed(x, self.Psi)
         elif self.transform == 'pseudocount':
-            fx = torch.log(x + 1)                     # ILR transform for testing
-        hx = (self.Psi @ fx.T).T                      # B x D-1
+            fx = torch.log(x + 1)                 # ILR transform for testing
+            hx = (self.Psi @ fx.T).T              # B x D-1
         z = self.encoder(hx)
         return z
 
@@ -209,13 +212,12 @@ class LinearBatchVAE(LinearVAE):
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
 
     def encode(self, x, b):
-        # use feed-forward network to project to
-        # log-odds space
+        # TODO: call super.encode()
         if self.transform == 'arcsine':
-            fx = self.input_embed(x)
+            hx = self.input_embed(x, self.Psi)
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                     # ILR transform for testing
-        hx = (self.Psi @ fx.T).T                      # B x D-1
+            hx = (self.Psi @ fx.T).T                      # B x D-1
         batch_effects = self.beta(b)                  # B x D-1
         hx = hx - batch_effects
         z = self.encoder(hx)
