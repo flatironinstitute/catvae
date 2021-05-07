@@ -1,8 +1,3 @@
-"""
-Author : XuchanBao
-This code was adapted from
-https://github.com/XuchanBao/linear-ae
-"""
 import torch
 import torch.nn as nn
 from catvae.composition import ilr, closure
@@ -25,6 +20,21 @@ def get_basis(input_dim, basis=None):
         indices.copy(), basis.data.astype(np.float32).copy(),
         requires_grad=False).coalesce()
     return Psi
+
+
+class ArcsineEmbed(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super(ArcsineEmbed, self).__init__()
+        self.embed = nn.Parameter(
+            torch.zeros(input_dim, hidden_dim))
+        self.ffn_weights = nn.Parameter(torch.zeros(input_dim, hidden_dim, 1))
+        self.bias = nn.Parameter(torch.zeros(input_dim))
+
+    def forward(self, x):
+        a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
+        x_ = a[:, :, None] * self.embed     # B x D x H
+        fx = torch.einsum('bih,ihk -> bik', x_, self.ffn_weights).squeeze()
+        return fx + self.bias
 
 
 class Encoder(nn.Module):
@@ -95,11 +105,9 @@ class LinearVAE(nn.Module):
         self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
-
+        self.transform = transform
         if self.transform == 'arcsine':
-            self.input_embed = nn.Parameter(
-                torch.zeros(self.n_features, hidden_dim))
-            self.ffn = nn.Linear(hidden_dim, 1, bias=True)
+            self.input_embed = ArcsineEmbed(self.input_dim + 1, hidden_dim)
 
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
@@ -119,12 +127,10 @@ class LinearVAE(nn.Module):
 
     def encode(self, x):
         if self.transform == 'arcsine':
-            a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
-            fx = a[:, :, None] * self.input_embed     # B x D x H
-            hx = self.ffn(fx).squeeze()               # B x D x 1
+            fx = self.input_embed(x)
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                     # ILR transform for testing
-            hx = (self.Psi @ fx.T).T                  # B x D-1
+        hx = (self.Psi @ fx.T).T                      # B x D-1
         z = self.encoder(hx)
         return z
 
@@ -176,37 +182,29 @@ class LinearBatchVAE(LinearVAE):
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
-            bias=bias)
+            bias=bias, transform=transform)
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         batch_prior = batch_prior
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
-
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
-        if self.transform == 'arcsine':
-            self.input_embed = nn.Parameter(
-                torch.zeros(self.n_features, hidden_dim))
-            self.ffn = nn.Linear(hidden_dim, 1, bias=True)
 
     def encode(self, x, b):
         # use feed-forward network to project to
         # log-odds space
         if self.transform == 'arcsine':
-            a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
-            fx = a[:, :, None] * self.input_embed     # B x D x H
-            hx = self.ffn(fx).squeeze()               # B x D x 1
+            fx = self.input_embed(x)
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                     # ILR transform for testing
-            hx = (self.Psi @ fx.T).T                  # B x D-1
-        # hx = ilr(self.imputer(x), self.Psi)
-        batch_effects = self.beta(b)              # B x D-1
+        hx = (self.Psi @ fx.T).T                      # B x D-1
+        batch_effects = self.beta(b)                  # B x D-1
         hx = hx - batch_effects
         z = self.encoder(hx)
         return z
 
     def forward(self, x, b):
-        z_mean = self.encode(self, x, b)
+        z_mean = self.encode(x, b)
         batch_effects = self.beta(b)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)

@@ -394,7 +394,7 @@ class LightningBatchLinearVAE(LightningVAE):
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
             bias=self.hparams.bias,
-            transform=self.transform)
+            transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
