@@ -36,6 +36,22 @@ class ArcsineEmbed(nn.Module):
         fx = torch.einsum('bih,ihk -> bik', x_, self.ffn_weights).squeeze()
         return fx + self.bias
 
+class CLREmbed(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super(ArcsineEmbed, self).__init__()
+        self.embed = nn.Parameter(
+            torch.zeros(input_dim, hidden_dim))
+        self.ffn_weights = nn.Parameter(torch.zeros(input_dim, hidden_dim, 1))
+        self.bias = nn.Parameter(torch.zeros(input_dim))
+
+    def forward(self, x):
+        a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
+        a = torch.log(closure(x + 1))
+        a = a - a.mean(axis=1).reshape(-1, 1)     # center around mean
+        x_ = a[:, :, None] * self.embed     # B x D x H
+        fx = torch.einsum('bih,ihk -> bik', x_, self.ffn_weights).squeeze()
+        return fx + self.bias
+
 
 class Encoder(nn.Module):
     def __init__(self, input_dim : int,
@@ -108,6 +124,8 @@ class LinearVAE(nn.Module):
         self.transform = transform
         if self.transform == 'arcsine':
             self.input_embed = ArcsineEmbed(self.input_dim + 1, hidden_dim)
+        if self.transform == 'clr':
+            self.input_embed = CLREmbed(self.input_dim + 1, hidden_dim)
 
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
