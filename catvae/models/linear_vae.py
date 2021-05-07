@@ -144,7 +144,7 @@ class LinearVAE(nn.Module):
         return mult_loss
 
     def encode(self, x):
-        if self.transform == 'arcsine':
+        if self.transform in {'arcsine', 'clr'}:
             fx = self.input_embed(x)
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                     # ILR transform for testing
