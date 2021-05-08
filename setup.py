@@ -39,6 +39,7 @@ setup(name='catvae',
           'seaborn',
           'jupyter',
           'gneiss',
+          'getotorch',
           'scikit-bio',
           'tensorboard',
           'pytorch-lightning'
