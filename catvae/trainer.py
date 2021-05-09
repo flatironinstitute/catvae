@@ -223,8 +223,13 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--n-hidden', help='Encoder dimension.',
             required=False, type=int, default=64)
+        parser.add_argument(
+            '--dropout', help='Dropout probability',
+            required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
+        parser.add_argument('--batch-norm', dest='batch_norm', action='store_true')
+        parser.add_argument('--no-batch-norm', dest='batch_norm', action='store_false')
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -355,6 +360,8 @@ class LightningLinearVAE(LightningVAE):
             latent_dim=self.hparams.n_latent,
             bias=self.hparams.bias,
             encoder_depth=self.hparams.encoder_depth,
+            batch_norm=self.hparams.batch_norm,
+            dropout=self.hparams.dropout,
             transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -453,10 +460,7 @@ class LightningBatchLinearVAE(LightningVAE):
             current_lr = self.hparams.learning_rate
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss,
-            'train/recon_loss': recon_loss,
-            'train/kl_div_z': kl_div_z,
-            'train/kl_div_b': kl_div_b,
-            'lr': current_lr, 'g_loss' : loss
+            'lr': current_lr,
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}

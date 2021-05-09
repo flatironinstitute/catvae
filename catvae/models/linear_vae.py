@@ -27,19 +27,19 @@ class ArcsineEmbed(nn.Module):
         super(ArcsineEmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
-        self.ffn = nn.Sequential([
+        self.ffn = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * 4, bias=True),
             nn.Softplus(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim * 4, 1, bias=True),
-        ])
+        )
 
     def forward(self, x, Psi):
         a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
         x_ = a[:, :, None] * self.embed           # B x D x H
-        fx = self.ffn(x_)
+        fx = self.ffn(x_).squeeze()
         fx = (Psi @ fx.T).T                         # B x D-1
-        return fx + self.bias
+        return fx
 
 
 class CLREmbed(nn.Module):
@@ -47,28 +47,28 @@ class CLREmbed(nn.Module):
         super(CLREmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
-        self.ffn = nn.Sequential([
+        self.ffn = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * 4, bias=True),
             nn.Softplus(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim * 4, 1, bias=True),
-        ])
+        )
 
     def forward(self, x, Psi):
         a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
         a = torch.log(closure(x + 1))
         a = a - a.mean(axis=1).reshape(-1, 1)     # center around mean
         x_ = a[:, :, None] * self.embed           # B x D x H
-        fx = self.ffn(x_)
+        fx = self.ffn(x_).squeeze()
         fx = (Psi @ fx.T).T                       # B x D-1
-        return fx + self.bias
+        return fx
 
 
 class Encoder(nn.Module):
     def __init__(self, input_dim : int,
                  hidden_dim : int,
                  latent_dim : int, bias : bool=False,
-                 dropout = 0.1, batch_norm : bool=False,
+                 dropout = 0.1, batch_norm : bool=True,
                  depth : int = 1, init_scale : float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
@@ -119,7 +119,7 @@ class LinearVAE(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim=None,
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False, transform='arcsine',
-                 dropout=0.1, batch_norm=False):
+                 dropout=0.1, batch_norm=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -197,7 +197,7 @@ class LinearBatchVAE(LinearVAE):
                  batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False, transform='arcsine',
-                 batch_norm=False, dropout=0.1):
+                 batch_norm=True, dropout=0.1):
         """ Account for batch effects.
 
         Parameters
