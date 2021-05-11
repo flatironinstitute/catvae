@@ -418,7 +418,8 @@ class LightningBatchLinearVAE(LightningVAE):
         self.model.decoder.weight.requires_grad = False
 
     def to_latent(self, X):
-        return self.model.encode(X)
+        # marginalize over batches
+        return self.model.encode_marginalized(X)
 
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)

@@ -233,10 +233,24 @@ class LinearBatchVAE(LinearVAE):
             hx = self.input_embed(x, self.Psi)
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                     # ILR transform for testing
-            hx = (self.Psi @ fx.T).T                      # B x D-1
+            hx = (self.Psi @ fx.T).T                  # B x D-1
         batch_effects = self.beta(b)                  # B x D-1
         hx = hx - batch_effects
         z = self.encoder(hx)
+        return z
+
+    def encode_marginalized(self, x):
+        # loop over all possible batches
+        b = torch.arange(self.batch_dim)
+        x = torch.cat(self.batch_dim * [x]).permute(1, 0, 2)   # N x B x D
+        z = self.encode(x, b)  # N x B x H
+        # Q : Can we weight by the reconstruction error? p(xhat | x, b)
+        # Should be able to, but its not clear why we can do this ...
+        # Another question, wouldn't all of the losses be the same??
+        losses = self.get_reconstruction_loss(x, b)   # N x B of losses
+        alpha = torch.nn.Softmax(-losses)  # weighted by losses
+        # marginalize over batches
+        z = torch.einsum('nbh,nb->nh', z, alpha)
         return z
 
     def forward(self, x, b):
