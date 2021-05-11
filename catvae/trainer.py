@@ -223,8 +223,13 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--n-hidden', help='Encoder dimension.',
             required=False, type=int, default=64)
+        parser.add_argument(
+            '--dropout', help='Dropout probability',
+            required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
+        parser.add_argument('--batch-norm', dest='batch_norm', action='store_true')
+        parser.add_argument('--no-batch-norm', dest='batch_norm', action='store_false')
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -242,8 +247,9 @@ class LightningVAE(pl.LightningModule):
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
         parser.add_argument(
-            '--imputer', help='Imputation technique to use.',
-            required=False, type=bool, default=None)
+            '--transform', help=('Specifies transform for preprocessing '
+                                 '(arcsine, pseudocount, rclr)'),
+            required=False, type=str, default='pseudocount')
         parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
@@ -352,7 +358,11 @@ class LightningLinearVAE(LightningVAE):
             n_input, basis=basis,
             hidden_dim=self.hparams.n_hidden,
             latent_dim=self.hparams.n_latent,
-            bias=self.hparams.bias)
+            bias=self.hparams.bias,
+            encoder_depth=self.hparams.encoder_depth,
+            batch_norm=self.hparams.batch_norm,
+            dropout=self.hparams.dropout,
+            transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -390,10 +400,8 @@ class LightningBatchLinearVAE(LightningVAE):
             batch_prior=self.batch_prior,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
-            bias=self.hparams.bias)
-        # self.discriminator = nn.Sequential(
-        #     nn.Linear(args.n_latent, self.n_batches),
-        #     nn.Softmax())
+            bias=self.hparams.bias,
+            transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -410,7 +418,8 @@ class LightningBatchLinearVAE(LightningVAE):
         self.model.decoder.weight.requires_grad = False
 
     def to_latent(self, X):
-        return self.model.encode(X)
+        # marginalize over batches
+        return self.model.encode_marginalized(X)
 
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
@@ -452,10 +461,7 @@ class LightningBatchLinearVAE(LightningVAE):
             current_lr = self.hparams.learning_rate
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss,
-            'train/recon_loss': recon_loss,
-            'train/kl_div_z': kl_div_z,
-            'train/kl_div_b': kl_div_b,
-            'lr': current_lr, 'g_loss' : loss
+            'lr': current_lr,
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
