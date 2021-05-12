@@ -136,7 +136,6 @@ class LinearVAE(nn.Module):
         self.decoder = nn.Linear(
             latent_dim, self.input_dim, bias=self.bias)
         geotorch.grassmannian(self.decoder, 'weight')
-        self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
@@ -161,12 +160,18 @@ class LinearVAE(nn.Module):
         mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
         return mult_loss
 
-    def encode(self, x):
+    def impute(self, x):
         if self.transform in {'arcsine', 'clr'}:
             hx = self.input_embed(x, self.Psi)
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                 # ILR transform for testing
             hx = (self.Psi @ fx.T).T              # B x D-1
+        else:
+            raise ValueError(f'Unrecognzied transform {self.transform}')
+        return hx
+
+    def encode(self, x):
+        hx = self.impute(x)
         z = self.encoder(hx)
         return z
 
@@ -183,8 +188,7 @@ class LinearVAE(nn.Module):
         return loss
 
     def get_reconstruction_loss(self, x):
-        x_ = ilr(self.imputer(x), self.Psi)
-        z_mean = self.encoder(x_)
+        z_mean = self.encode(x)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
@@ -228,29 +232,35 @@ class LinearBatchVAE(LinearVAE):
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
 
     def encode(self, x, b):
-        # TODO: call super.encode()
-        if self.transform in {'arcsine', 'clr'}:
-            hx = self.input_embed(x, self.Psi)
-        elif self.transform == 'pseudocount':
-            fx = torch.log(x + 1)                     # ILR transform for testing
-            hx = (self.Psi @ fx.T).T                  # B x D-1
-        batch_effects = self.beta(b)                  # B x D-1
+        hx = self.impute(x)
+        batch_effects = self.beta(b)
         hx = hx - batch_effects
         z = self.encoder(hx)
         return z
 
-    def encode_marginalized(self, x):
-        # loop over all possible batches
-        b = torch.arange(self.batch_dim)
-        x = torch.cat(self.batch_dim * [x]).permute(1, 0, 2)   # N x B x D
-        z = self.encode(x, b)  # N x B x H
-        # Q : Can we weight by the reconstruction error? p(xhat | x, b)
-        # Should be able to, but its not clear why we can do this ...
-        # Another question, wouldn't all of the losses be the same??
-        losses = self.get_reconstruction_loss(x, b)   # N x B of losses
-        alpha = torch.nn.Softmax(-losses)  # weighted by losses
-        # marginalize over batches
-        z = torch.einsum('nbh,nb->nh', z, alpha)
+    def encode_marginalized(self, x, b):
+        """ Marginalize over batch_effects given predictions
+
+        This will compute the expected batch effect given the
+        batch classification probabilities.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Counts of interest (B x D)
+        b : torch.Tensor
+            Batch effect prediction probabilities (B x K)
+
+        Notes
+        -----
+        This assumes that the batch classifier is well-calibrated.
+        """
+        # obtain expected batch effect
+        beta_ = self.beta.weight
+        batch_effects = b @ beta_
+        hx = self.impute(x)
+        hx = hx - batch_effects
+        z = self.encoder(hx)
         return z
 
     def forward(self, x, b):

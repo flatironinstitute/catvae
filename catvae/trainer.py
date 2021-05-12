@@ -14,19 +14,20 @@ from catvae.dataset.biom import (
     collate_batch_f
 )
 from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
-from catvae.composition import (ilr_inv, alr_basis,
-                                ilr_basis, identity_basis)
+from catvae.composition import (ilr_inv, alr_basis, ilr_basis,
+                                identity_basis)
 from catvae.metrics import (
-    metric_subspace, metric_transpose_theorem, metric_pairwise,
+    metric_subspace, metric_pairwise,
     metric_procrustes, metric_alignment, metric_orthogonality)
 import pytorch_lightning as pl
 from skbio import TreeNode
-from skbio.stats.composition import alr_inv, closure
+from skbio.stats.composition import alr_inv, closure, clr
 
 from biom import load_table
 import pandas as pd
 from scipy.stats import entropy
 from scipy.sparse import coo_matrix
+from sklearn.linear_model import SGDClassifier
 import numpy as np
 import os
 
@@ -137,16 +138,12 @@ class LightningVAE(pl.LightningModule):
         rec_err = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_rec_err',
                                           rec_err, self.global_step)
-        if self.hparams.encoder_depth == 1:
-            mt = metric_transpose_theorem(self.model)
-            self.logger.experiment.add_scalar('transpose', mt, self.global_step)
         ortho, eig_err = metric_orthogonality(self.model)
         self.logger.experiment.add_scalar('orthogonality',
                                           ortho, self.global_step)
 
         tensorboard_logs = dict(
             [('val_loss', rec_err),
-             # ('transpose', mt),
              ('orthogonality', ortho),
              ('eigenvalue-error', eig_err)]
         )
@@ -389,6 +386,17 @@ class LightningBatchLinearVAE(LightningVAE):
             self.hparams.sample_metadata, dtype=str)
         # extract the number of study batches
         self.n_batches = len(set(self.metadata[self.hparams.batch_category]))
+        # initialize batch classifier
+        logcounts = table.matrix_data.tocoo()
+        logcounts.data = np.log(logcounts.data)
+        md = self.metadata.set_index(self.metadata.columns[0])
+        # TODO: we may want to figure out how to swab this out with another
+        # custom batch classifier to avoid GPU transfers ...
+        self.discriminator = SGDClassifier(loss='log', max_iter=10)
+        # TODO: careful here with the metadata alignment ...
+        batches = md.loc[table.ids(), self.hparams.batch_category].astype(np.int64)
+        self.discriminator = self.discriminator.fit(logcounts.T, batches)
+
         # initialize over variables
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
@@ -418,8 +426,10 @@ class LightningBatchLinearVAE(LightningVAE):
         self.model.decoder.weight.requires_grad = False
 
     def to_latent(self, X):
-        # marginalize over batches
-        return self.model.encode_marginalized(X)
+        X = X.cpu()  # TODO: check if on CPU
+        b = self.discriminator.predict_proba(X)
+        b = torch.Tensor(b).to(self.device)
+        return self.model.encode_marginalized(X, b)
 
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
@@ -454,6 +464,10 @@ class LightningBatchLinearVAE(LightningVAE):
         losses = self.model(counts, batch_ids)
         loss, recon_loss, kl_div_z, kl_div_b = losses
         assert torch.isnan(loss).item() is False
+        # batch classifier partial fit
+        self.discriminator = self.discriminator.partial_fit(
+            clr(counts.detach().cpu().numpy() + 1),
+            batch_ids.detach().cpu().numpy())
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
             current_lr = lr
@@ -506,9 +520,12 @@ class LightningBatchLinearVAE(LightningVAE):
             losses = self.model(counts, batch_ids)
             loss, rec_err, kl_div_z, kl_div_b = losses
             assert torch.isnan(loss).item() is False
-
+            bloss = self.discriminator.score(
+                clr(counts.detach().cpu().numpy() + 1),
+                batch_ids.detach().cpu().numpy())
             # Record the actual loss.
             tensorboard_logs = {'val_loss': loss,
+                                'val/batch_accuracy' : bloss,
                                 'val/recon_loss': rec_err,
                                 'val/kl_div_z': kl_div_z,
                                 'val/kl_div_b': kl_div_b,
@@ -519,6 +536,7 @@ class LightningBatchLinearVAE(LightningVAE):
 
     def validation_epoch_end(self, outputs):
         metrics = ['val_loss',
+                   'val/batch_accuracy',
                    'val/recon_loss',
                    'val/kl_div_z',
                    'val/kl_div_b',

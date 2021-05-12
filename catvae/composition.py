@@ -5,6 +5,7 @@ from gneiss.util import match_tips
 from gneiss.balances import sparse_balance_basis
 from skbio import TreeNode
 
+
 def closure(x):
     denom = torch.sum(x, dim=-1)
 
@@ -21,6 +22,7 @@ def closure(x):
         return x / denom
     else:
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
+
 
 def ilr(p, basis):
     return mm(basis, torch.log(p).T).T
