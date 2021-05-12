@@ -1,9 +1,20 @@
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.sparse import mm
 from gneiss.util import match_tips
 from gneiss.balances import sparse_balance_basis
 from skbio import TreeNode
+
+
+class pseudoCLR(nn.Module):
+    def __init__(self):
+        super(pseudoCLR, self).__init__()
+
+    def forward(self, x):
+        y = torch.log(x + 1)
+        y = y - y.mean(axis=1).view(-1, 1)
+        return y
 
 
 def closure(x):

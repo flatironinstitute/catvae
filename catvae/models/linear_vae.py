@@ -249,7 +249,7 @@ class LinearBatchVAE(LinearVAE):
         x : torch.Tensor
             Counts of interest (B x D)
         b : torch.Tensor
-            Batch effect prediction probabilities (B x K)
+            Batch effect prediction log probabilities (B x K)
 
         Notes
         -----
@@ -257,7 +257,8 @@ class LinearBatchVAE(LinearVAE):
         """
         # obtain expected batch effect
         beta_ = self.beta.weight
-        batch_effects = b @ beta_
+        m = nn.Softmax()
+        batch_effects = b @ m(beta_)
         hx = self.impute(x)
         hx = hx - batch_effects
         z = self.encoder(hx)
