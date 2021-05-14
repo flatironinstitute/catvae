@@ -406,7 +406,6 @@ class LightningBatchLinearVAE(LightningVAE):
             transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
-
         self.discriminator = nn.Sequential(
             OrderedDict([
                 ('pseudoCLR', pseudoCLR()),
@@ -459,28 +458,33 @@ class LightningBatchLinearVAE(LightningVAE):
         return self._dataloader(self.hparams.test_biom, shuffle=False)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        counts, batch_ids = batch
-        counts = counts.to(self.device)
-        batch_ids = batch_ids.to(self.device)
-        self.model.train()
-        losses = self.model(counts, batch_ids)
-        loss, recon_loss, kl_div_z, kl_div_b = losses
-        assert torch.isnan(loss).item() is False
-        # batch classifier partial fit
-        batch_pred = self.discriminator(counts)
-        batch_loss = self.discriminator_loss(batch_pred, batch_ids)
-        # L2 regularization
-        batch_loss += torch.norm(self.discriminator.linear.weight, 2)
-        loss += batch_loss
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
             current_lr = lr
         else:
             current_lr = self.hparams.learning_rate
-        tensorboard_logs = {
-            'train_loss': loss, 'batch_loss': batch_loss,
-            'elbo': -loss, 'lr': current_lr,
-        }
+
+        counts, batch_ids = batch
+        counts = counts.to(self.device)
+        batch_ids = batch_ids.to(self.device)
+        if optimizer_idx == 0 or optimizer_idx == 1:
+            self.model.train()
+            losses = self.model(counts, batch_ids)
+            loss, recon_loss, kl_div_z, kl_div_b = losses
+            assert torch.isnan(loss).item() is False
+            tensorboard_logs = {
+                'lr': current_lr, 'train_loss' : loss
+            }
+        else:
+            # batch classifier partial fit
+            batch_pred = self.discriminator(counts)
+            loss = self.discriminator_loss(batch_pred, batch_ids)
+            # L2 regularization
+            loss += torch.norm(self.discriminator.linear.weight, 2)
+            tensorboard_logs = {
+                'lr': current_lr, 'batch_loss' : loss
+            }
+
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
