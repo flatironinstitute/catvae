@@ -407,13 +407,11 @@ class LightningBatchLinearVAE(LightningVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
         self.discriminator = nn.Sequential(
-            OrderedDict([
-                ('pseudoCLR', pseudoCLR()),
-                ('linear', nn.Linear(n_input, self.n_batches, bias=True)),
-                ('log_softmax', nn.LogSoftmax(dim=1))
-            ])
+            pseudoCLR(),
+            nn.Linear(n_input, self.n_batches, bias=True),
+            nn.Dropout(p=0.95),
         )
-        self.discriminator_loss = nn.NLLLoss()
+        self.discriminator_loss = nn.CrossEntropyLoss()
 
 
     def initialize_batch(self, beta):
@@ -476,11 +474,12 @@ class LightningBatchLinearVAE(LightningVAE):
                 'lr': current_lr, 'train_loss' : loss
             }
         else:
+            self.discriminator.train()
             # batch classifier partial fit
             batch_pred = self.discriminator(counts)
             loss = self.discriminator_loss(batch_pred, batch_ids)
             # L2 regularization
-            loss += torch.norm(self.discriminator.linear.weight, 2)
+            # loss += 10 * torch.norm(self.discriminator.linear.weight, 2)
             tensorboard_logs = {
                 'lr': current_lr, 'batch_loss' : loss
             }
@@ -497,9 +496,7 @@ class LightningBatchLinearVAE(LightningVAE):
             list(self.model.beta.parameters()) + [self.model.batch_logvars],
             lr=self.hparams.learning_rate)
         opt_d = torch.optim.Adam(
-            list(self.discriminator.parameters()),
-            lr=1e-1)
-
+            list(self.discriminator.parameters()), lr=1e-3, weight_decay=0)
         if self.hparams.scheduler == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
@@ -520,11 +517,12 @@ class LightningBatchLinearVAE(LightningVAE):
             scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'none':
             return [opt_g, opt_b, opt_d]
-
+        else:
+            raise ValueError(
+                f'Scheduler {self.hparams.scheduler} not defined.')
         scheduler_b = CosineAnnealingLR(
-            opt_g, T_max=self.hparams.steps_per_batch)
-        scheduler_d = CosineAnnealingLR(
-            opt_d, T_max=self.hparams.steps_per_batch)
+            opt_b, T_max=self.hparams.steps_per_batch)
+        scheduler_d = StepLR(opt_d, step_size=10, gamma=0.9999)
         return [opt_g, opt_b, opt_d], [scheduler, scheduler_b, scheduler_d]
 
     def validation_step(self, batch, batch_idx):

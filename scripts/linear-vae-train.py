@@ -36,7 +36,6 @@ def main(args):
         check_val_every_n_epoch=1,
         gradient_clip_val=args.grad_clip,
         profiler=profiler,
-        stochastic_weight_avg=True
     )
     ckpt_path = os.path.join(
         args.output_directory,
