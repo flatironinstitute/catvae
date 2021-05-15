@@ -17,6 +17,16 @@ class pseudoCLR(nn.Module):
         return y
 
 
+class pseudoALR(nn.Module):
+    def __init__(self):
+        super(pseudoALR, self).__init__()
+
+    def forward(self, x):
+        y = torch.log(x + 1)
+        y = y[:, 1:] - y[:, 0].view(-1, 1)
+        return y
+
+
 def closure(x):
     denom = torch.sum(x, dim=-1)
 
