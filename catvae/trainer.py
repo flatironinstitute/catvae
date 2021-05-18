@@ -14,19 +14,22 @@ from catvae.dataset.biom import (
     collate_batch_f
 )
 from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
-from catvae.composition import (ilr_inv, alr_basis,
-                                ilr_basis, identity_basis)
+from catvae.composition import (ilr_inv, alr_basis, ilr_basis,
+                                identity_basis, pseudoCLR, pseudoALR)
 from catvae.metrics import (
-    metric_subspace, metric_transpose_theorem, metric_pairwise,
+    metric_subspace, metric_pairwise,
     metric_procrustes, metric_alignment, metric_orthogonality)
 import pytorch_lightning as pl
 from skbio import TreeNode
-from skbio.stats.composition import alr_inv, closure
+from skbio.stats.composition import alr_inv, closure, clr
 
 from biom import load_table
 import pandas as pd
 from scipy.stats import entropy
 from scipy.sparse import coo_matrix
+from sklearn.linear_model import SGDClassifier
+from sklearn.metrics import accuracy_score
+from collections import OrderedDict
 import numpy as np
 import os
 
@@ -137,16 +140,12 @@ class LightningVAE(pl.LightningModule):
         rec_err = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_rec_err',
                                           rec_err, self.global_step)
-        if self.hparams.encoder_depth == 1:
-            mt = metric_transpose_theorem(self.model)
-            self.logger.experiment.add_scalar('transpose', mt, self.global_step)
         ortho, eig_err = metric_orthogonality(self.model)
         self.logger.experiment.add_scalar('orthogonality',
                                           ortho, self.global_step)
 
         tensorboard_logs = dict(
             [('val_loss', rec_err),
-             # ('transpose', mt),
              ('orthogonality', ortho),
              ('eigenvalue-error', eig_err)]
         )
@@ -223,8 +222,13 @@ class LightningVAE(pl.LightningModule):
         parser.add_argument(
             '--n-hidden', help='Encoder dimension.',
             required=False, type=int, default=64)
+        parser.add_argument(
+            '--dropout', help='Dropout probability',
+            required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
+        parser.add_argument('--batch-norm', dest='batch_norm', action='store_true')
+        parser.add_argument('--no-batch-norm', dest='batch_norm', action='store_false')
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -242,8 +246,9 @@ class LightningVAE(pl.LightningModule):
             '--use-analytic-elbo', help='Use analytic formulation of elbo.',
             required=False, type=bool, default=True)
         parser.add_argument(
-            '--imputer', help='Imputation technique to use.',
-            required=False, type=bool, default=None)
+            '--transform', help=('Specifies transform for preprocessing '
+                                 '(arcsine, pseudocount, rclr)'),
+            required=False, type=str, default='pseudocount')
         parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
@@ -352,7 +357,11 @@ class LightningLinearVAE(LightningVAE):
             n_input, basis=basis,
             hidden_dim=self.hparams.n_hidden,
             latent_dim=self.hparams.n_latent,
-            bias=self.hparams.bias)
+            bias=self.hparams.bias,
+            encoder_depth=self.hparams.encoder_depth,
+            batch_norm=self.hparams.batch_norm,
+            dropout=self.hparams.dropout,
+            transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -379,7 +388,10 @@ class LightningBatchLinearVAE(LightningVAE):
             self.hparams.sample_metadata, dtype=str)
         # extract the number of study batches
         self.n_batches = len(set(self.metadata[self.hparams.batch_category]))
-        # initialize over variables
+        # initialize batch classifier
+        logcounts = table.matrix_data.tocoo()
+        logcounts.data = np.log(logcounts.data)
+        md = self.metadata.set_index(self.metadata.columns[0])
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
         self.model = LinearBatchVAE(
@@ -390,10 +402,8 @@ class LightningBatchLinearVAE(LightningVAE):
             batch_prior=self.batch_prior,
             basis=basis,
             encoder_depth=self.hparams.encoder_depth,
-            bias=self.hparams.bias)
-        # self.discriminator = nn.Sequential(
-        #     nn.Linear(args.n_latent, self.n_batches),
-        #     nn.Softmax())
+            bias=self.hparams.bias,
+            transform=self.hparams.transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -409,8 +419,17 @@ class LightningBatchLinearVAE(LightningVAE):
         self.model.decoder.weight = W
         self.model.decoder.weight.requires_grad = False
 
-    def to_latent(self, X):
-        return self.model.encode(X)
+    def to_latent(self, X, b):
+        """ Casts to latent space
+
+        Parameters
+        ----------
+        X : torch.Tensor
+           Counts of interest (N x D)
+        b : torch.Tensor
+           Class prediction probabilities for batch prediction (N x k)
+        """
+        return self.model.encode_marginalized(X, b)
 
     def _dataloader(self, biom_file, shuffle=True):
         table = load_table(biom_file)
@@ -438,6 +457,12 @@ class LightningBatchLinearVAE(LightningVAE):
         return self._dataloader(self.hparams.test_biom, shuffle=False)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams.learning_rate
+
         counts, batch_ids = batch
         counts = counts.to(self.device)
         batch_ids = batch_ids.to(self.device)
@@ -445,17 +470,8 @@ class LightningBatchLinearVAE(LightningVAE):
         losses = self.model(counts, batch_ids)
         loss, recon_loss, kl_div_z, kl_div_b = losses
         assert torch.isnan(loss).item() is False
-        if len(self.trainer.lr_schedulers) >= 1:
-            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
-            current_lr = lr
-        else:
-            current_lr = self.hparams.learning_rate
         tensorboard_logs = {
-            'train_loss': loss, 'elbo': -loss,
-            'train/recon_loss': recon_loss,
-            'train/kl_div_z': kl_div_z,
-            'train/kl_div_b': kl_div_b,
-            'lr': current_lr, 'g_loss' : loss
+            'lr': current_lr, 'train_loss' : loss
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
@@ -487,9 +503,12 @@ class LightningBatchLinearVAE(LightningVAE):
             steps = self.hparams.epochs // steps
             scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'none':
-            return [opt_g, opt_b]
+            return [opt_g, opt_b, opt_d]
+        else:
+            raise ValueError(
+                f'Scheduler {self.hparams.scheduler} not defined.')
         scheduler_b = CosineAnnealingLR(
-            opt_g, T_max=self.hparams.steps_per_batch)
+            opt_b, T_max=self.hparams.steps_per_batch)
         return [opt_g, opt_b], [scheduler, scheduler_b]
 
     def validation_step(self, batch, batch_idx):
@@ -500,14 +519,12 @@ class LightningBatchLinearVAE(LightningVAE):
             losses = self.model(counts, batch_ids)
             loss, rec_err, kl_div_z, kl_div_b = losses
             assert torch.isnan(loss).item() is False
-
             # Record the actual loss.
             tensorboard_logs = {'val_loss': loss,
                                 'val/recon_loss': rec_err,
                                 'val/kl_div_z': kl_div_z,
                                 'val/kl_div_b': kl_div_b,
                                 'val_rec_err': rec_err}
-
             # log the learning rate
             return {'val_loss': loss, 'log': tensorboard_logs}
 
@@ -558,4 +575,5 @@ class LightningBatchLinearVAE(LightningVAE):
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=False, type=str, default=None)
+
         return parser

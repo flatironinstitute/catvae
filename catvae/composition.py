@@ -1,9 +1,31 @@
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.sparse import mm
 from gneiss.util import match_tips
 from gneiss.balances import sparse_balance_basis
 from skbio import TreeNode
+
+
+class pseudoCLR(nn.Module):
+    def __init__(self):
+        super(pseudoCLR, self).__init__()
+
+    def forward(self, x):
+        y = torch.log(x + 1)
+        y = y - y.mean(axis=1).view(-1, 1)
+        return y
+
+
+class pseudoALR(nn.Module):
+    def __init__(self):
+        super(pseudoALR, self).__init__()
+
+    def forward(self, x):
+        y = torch.log(x + 1)
+        y = y[:, 1:] - y[:, 0].view(-1, 1)
+        return y
+
 
 def closure(x):
     denom = torch.sum(x, dim=-1)
@@ -21,6 +43,7 @@ def closure(x):
         return x / denom
     else:
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
+
 
 def ilr(p, basis):
     return mm(basis, torch.log(p).T).T

@@ -1,8 +1,3 @@
-"""
-Author : XuchanBao
-This code was adapted from
-https://github.com/XuchanBao/linear-ae
-"""
 import torch
 import torch.nn as nn
 from catvae.composition import ilr, closure
@@ -27,22 +22,70 @@ def get_basis(input_dim, basis=None):
     return Psi
 
 
+class ArcsineEmbed(nn.Module):
+    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+        super(ArcsineEmbed, self).__init__()
+        self.embed = nn.Parameter(
+            torch.zeros(input_dim, hidden_dim))
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim * 4, bias=True),
+            nn.Softplus(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim * 4, 1, bias=True),
+        )
+
+    def forward(self, x, Psi):
+        a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
+        x_ = a[:, :, None] * self.embed           # B x D x H
+        fx = self.ffn(x_).squeeze()
+        fx = (Psi @ fx.T).T                         # B x D-1
+        return fx
+
+
+class CLREmbed(nn.Module):
+    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+        super(CLREmbed, self).__init__()
+        self.embed = nn.Parameter(
+            torch.zeros(input_dim, hidden_dim))
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim * 4, bias=True),
+            nn.Softplus(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim * 4, 1, bias=True),
+        )
+
+    def forward(self, x, Psi):
+        a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
+        a = torch.log(closure(x + 1))
+        a = a - a.mean(axis=1).reshape(-1, 1)     # center around mean
+        x_ = a[:, :, None] * self.embed           # B x D x H
+        fx = self.ffn(x_).squeeze()
+        fx = (Psi @ fx.T).T                       # B x D-1
+        return fx
+
+
 class Encoder(nn.Module):
     def __init__(self, input_dim : int,
                  hidden_dim : int,
                  latent_dim : int, bias : bool=False,
+                 dropout = 0.1, batch_norm : bool=True,
                  depth : int = 1, init_scale : float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
-            self.first_encoder = nn.Linear(
+            first_encoder = nn.Linear(
                 input_dim, hidden_dim, bias=bias)
             num_encoder_layers = depth
             layers = []
-            layers.append(self.first_encoder)
+            layers.append(first_encoder)
+            layers.append(nn.Softplus())
+            layers.append(nn.Dropout(dropout))
             for layer_i in range(num_encoder_layers - 2):
-                layers.append(nn.Softplus())
                 layers.append(
                     nn.Linear(hidden_dim, hidden_dim, bias=bias))
+                layers.append(nn.Softplus())
+                layers.append(nn.Dropout(dropout))
+                if batch_norm:
+                    layers.append(nn.BatchNorm1d(hidden_dim))
             layers.append(nn.Linear(hidden_dim, latent_dim, bias=bias))
             self.encoder = nn.Sequential(*layers)
 
@@ -75,7 +118,8 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, latent_dim=None,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False):
+                 basis=None, bias=False, transform='arcsine',
+                 dropout=0.1, batch_norm=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -87,13 +131,18 @@ class LinearVAE(nn.Module):
         self.register_buffer('Psi', Psi)
         self.encoder = Encoder(
             self.input_dim, hidden_dim, latent_dim,
-            bias=bias, depth=encoder_depth, init_scale=init_scale)
+            bias=bias, depth=encoder_depth, init_scale=init_scale,
+            dropout=dropout, batch_norm=batch_norm)
         self.decoder = nn.Linear(
             latent_dim, self.input_dim, bias=self.bias)
         geotorch.grassmannian(self.decoder, 'weight')
-        self.imputer = lambda x: x + 1
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
+        self.transform = transform
+        if self.transform == 'arcsine':
+            self.input_embed = ArcsineEmbed(self.input_dim + 1, hidden_dim, dropout)
+        if self.transform == 'clr':
+            self.input_embed = CLREmbed(self.input_dim + 1, hidden_dim, dropout)
 
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
@@ -111,14 +160,23 @@ class LinearVAE(nn.Module):
         mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
         return mult_loss
 
+    def impute(self, x):
+        if self.transform in {'arcsine', 'clr'}:
+            hx = self.input_embed(x, self.Psi)
+        elif self.transform == 'pseudocount':
+            fx = torch.log(x + 1)                 # ILR transform for testing
+            hx = (self.Psi @ fx.T).T              # B x D-1
+        else:
+            raise ValueError(f'Unrecognzied transform {self.transform}')
+        return hx
+
     def encode(self, x):
-        hx = ilr(self.imputer(x), self.Psi)
+        hx = self.impute(x)
         z = self.encoder(hx)
         return z
 
     def forward(self, x):
-        x_ = ilr(self.imputer(x), self.Psi)
-        z_mean = self.encoder(x_)
+        z_mean = self.encode(x)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
@@ -130,8 +188,7 @@ class LinearVAE(nn.Module):
         return loss
 
     def get_reconstruction_loss(self, x):
-        x_ = ilr(self.imputer(x), self.Psi)
-        z_mean = self.encoder(x_)
+        z_mean = self.encode(x)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         x_out = self.decoder(z_sample)
@@ -143,7 +200,8 @@ class LinearBatchVAE(LinearVAE):
     def __init__(self, input_dim, hidden_dim, latent_dim,
                  batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False):
+                 basis=None, bias=False, transform='arcsine',
+                 batch_norm=True, dropout=0.1):
         """ Account for batch effects.
 
         Parameters
@@ -158,41 +216,57 @@ class LinearBatchVAE(LinearVAE):
            Number of batches (i.e. studies) to do batch correction
         batch_priors : np.array of float
            Normal variance priors for batch effects of shape D
+        transform : str
+           Choice of input transform.  Can choose from
+           arcsine, pseudocount and rclr (TODO).
         """
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
-            bias=bias)
+            bias=bias, transform=transform, dropout=dropout, batch_norm=batch_norm)
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         batch_prior = batch_prior
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
-        # self.input_embed = nn.Parameter(
-        #     torch.zeros(self.n_features, hidden_dim))
-        # self.ffn = nn.Linear(hidden_dim, 1, bias=True)
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
 
     def encode(self, x, b):
-        # use feed-forward network to project to
-        # log-odds space
-        # option 1
-        # a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
-        # x_ = a[:, :, None] * self.input_embed     # B x D x H
-        # fx = self.ffn(x_).squeeze()               # B x D x 1
-        # option 2
-        # fx = torch.log(x + 1)                     # ILR transform for testing
-        # hx = (self.Psi @ fx.T).T                  # B x D-1
-        hx = ilr(self.imputer(x), self.Psi)
-        batch_effects = self.beta(b)              # B x D-1
+        hx = self.impute(x)
+        batch_effects = self.beta(b)
+        hx = hx - batch_effects
+        z = self.encoder(hx)
+        return z
+
+    def encode_marginalized(self, x, b):
+        """ Marginalize over batch_effects given predictions
+
+        This will compute the expected batch effect given the
+        batch classification probabilities.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Counts of interest (B x D)
+        b : torch.Tensor
+            Batch effect prediction log probabilities (B x K)
+
+        Notes
+        -----
+        This assumes that the batch classifier is well-calibrated.
+        """
+        # obtain expected batch effect
+        beta_ = self.beta.weight
+        m = nn.Softmax()
+        batch_effects = b @ m(beta_)
+        hx = self.impute(x)
         hx = hx - batch_effects
         z = self.encoder(hx)
         return z
 
     def forward(self, x, b):
-        x_ = ilr(self.imputer(x), self.Psi)
+        z_mean = self.encode(x, b)
         batch_effects = self.beta(b)
-        z_mean = self.encoder(x_ - batch_effects)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         eps = torch.normal(torch.zeros_like(batch_effects), 1.0)
