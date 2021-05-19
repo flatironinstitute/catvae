@@ -39,7 +39,7 @@ def closure(x):
         denom = denom.reshape(n, 1)
         return x / denom
     elif len(x.size()) == 1:
-        d = x.size()
+        denom = x.size()
         return x / denom
     else:
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
