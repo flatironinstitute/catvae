@@ -1,8 +1,6 @@
 import datetime
 import argparse
 import torch
-import torch.nn.functional as F
-import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
@@ -13,23 +11,16 @@ from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
     collate_batch_f
 )
-from catvae.models import LinearCatVAE, LinearVAE, LinearBatchCatVAE, LinearBatchVAE
-from catvae.composition import (ilr_inv, alr_basis, ilr_basis,
-                                identity_basis, pseudoCLR, pseudoALR)
+from catvae.models import LinearCatVAE, LinearVAE, LinearBatchVAE
+from catvae.composition import (alr_basis, ilr_basis, identity_basis)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
     metric_procrustes, metric_alignment, metric_orthogonality)
 import pytorch_lightning as pl
-from skbio import TreeNode
-from skbio.stats.composition import alr_inv, closure, clr
 
 from biom import load_table
 import pandas as pd
-from scipy.stats import entropy
 from scipy.sparse import coo_matrix
-from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import accuracy_score
-from collections import OrderedDict
 import numpy as np
 import os
 
@@ -44,8 +35,8 @@ class LightningVAE(pl.LightningModule):
 
     def set_basis(self, n_input, table):
         # a sneak peek into file types to initialize model
-        if (self.hparams.basis is not None and
-            os.path.exists(self.hparams.basis)):
+        has_basis = self.hparams.basis is not None
+        if (has_basis and os.path.exists(self.hparams.basis)):
             basis = ilr_basis(self.hparams.basis, table)
         elif self.hparams.basis == 'alr':
             basis = coo_matrix(alr_basis(n_input))
@@ -227,8 +218,10 @@ class LightningVAE(pl.LightningModule):
             required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
-        parser.add_argument('--batch-norm', dest='batch_norm', action='store_true')
-        parser.add_argument('--no-batch-norm', dest='batch_norm', action='store_false')
+        parser.add_argument('--batch-norm', dest='batch_norm',
+                            action='store_true')
+        parser.add_argument('--no-batch-norm', dest='batch_norm',
+                            action='store_false')
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -247,7 +240,7 @@ class LightningVAE(pl.LightningModule):
             required=False, type=bool, default=True)
         parser.add_argument(
             '--transform', help=('Specifies transform for preprocessing '
-                                 '(arcsine, pseudocount, rclr)'),
+                                 '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
         parser.add_argument(
             '--scheduler',
@@ -271,12 +264,10 @@ class LightningCatVAE(LightningVAE):
         table = load_table(self.hparams.train_biom)
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
-        imputer = lambda x: x + 1
         self.model = LinearCatVAE(
             n_input,
             hidden_dim=self.hparams.n_latent,
             basis=basis,
-            #imputer=self.hparams.imputer,
             imputer=None,
             encoder_depth=self.hparams.encoder_depth,
             batch_size=self.hparams.batch_size,
@@ -343,7 +334,6 @@ class LightningCatVAE(LightningVAE):
         return super().training_step(batch, batch_idx)
 
 
-
 class LightningLinearVAE(LightningVAE):
     def __init__(self, args):
         super(LightningLinearVAE, self).__init__(args)
@@ -380,7 +370,8 @@ class LightningBatchLinearVAE(LightningVAE):
         # the table
         batch_prior = pd.read_table(self.hparams.batch_prior, dtype=str)
         batch_prior = batch_prior.set_index(batch_prior.columns[0])
-        batch_prior = batch_prior.values.astype(np.float64).reshape(1, -1).squeeze()
+        batch_prior = batch_prior.values.astype(np.float64)
+        batch_prior = batch_prior.reshape(1, -1).squeeze()
         assert table.shape[0] == len(batch_prior) + 1, (
             table.shape, batch_prior.shape)
         self.batch_prior = torch.Tensor(batch_prior).float()
@@ -391,7 +382,6 @@ class LightningBatchLinearVAE(LightningVAE):
         # initialize batch classifier
         logcounts = table.matrix_data.tocoo()
         logcounts.data = np.log(logcounts.data)
-        md = self.metadata.set_index(self.metadata.columns[0])
         n_input = table.shape[0]
         basis = self.set_basis(n_input, table)
         self.model = LinearBatchVAE(
@@ -471,14 +461,14 @@ class LightningBatchLinearVAE(LightningVAE):
         loss, recon_loss, kl_div_z, kl_div_b = losses
         assert torch.isnan(loss).item() is False
         tensorboard_logs = {
-            'lr': current_lr, 'train_loss' : loss
+            'lr': current_lr, 'train_loss': loss
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
         opt_g = torch.optim.Adam(
-            list(self.model.encoder.parameters()) + \
+            list(self.model.encoder.parameters()) +
             list(self.model.decoder.parameters()),
             lr=self.hparams.learning_rate)
         opt_b = torch.optim.Adam(
@@ -503,7 +493,7 @@ class LightningBatchLinearVAE(LightningVAE):
             steps = self.hparams.epochs // steps
             scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
         elif self.hparams.scheduler == 'none':
-            return [opt_g, opt_b, opt_d]
+            return [opt_g, opt_b]
         else:
             raise ValueError(
                 f'Scheduler {self.hparams.scheduler} not defined.')
