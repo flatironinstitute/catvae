@@ -41,7 +41,7 @@ jobs:
 
       - name: Install conda packages
         shell: bash -l {0}
-        run: conda install pytorch pytorch-lightning gneiss scikit-bio biom-format pandas scipy numpy -c pytorch -c conda-forge
+        run: conda install pytorch pytorch-lightning gneiss scikit-bio biom-format pandas scipy numpy -c pytorch -c conda-forge -c bioconda
 
       - name: Install pip packages
         shell: bash -l {0}
