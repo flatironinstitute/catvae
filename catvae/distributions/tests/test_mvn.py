@@ -22,8 +22,7 @@ class TestMultivariateNormalFactorIdentity(unittest.TestCase):
 
     def test_covariance_matrix(self):
         loc = torch.zeros(self.d)
-        exp = (self.W @ torch.diag(self.D) @ self.W.t() +
-               self.s2 * self.Id)
+        exp = (self.W @ torch.diag(self.D) @ self.W.t() + self.s2 * self.Id)
         dist = MultivariateNormalFactorIdentity(
             loc, self.s2, self.D, self.W)
         cov = dist.covariance_matrix
@@ -35,8 +34,8 @@ class TestMultivariateNormalFactorIdentity(unittest.TestCase):
         loc = torch.zeros(self.d)
         dist = MultivariateNormalFactorIdentity(
             loc, self.s2, self.D, self.W)
-        exp = torch.inverse(self.W @ torch.diag(self.D) @ self.W.t() +
-                            self.s2 * self.Id)
+        r = self.W @ torch.diag(self.D) @ self.W.t() + self.s2 * self.Id
+        exp = torch.inverse(r)
         tt.assert_allclose(exp, dist.precision_matrix,
                            rtol=1, atol=1 / (math.sqrt(self.d)))
 

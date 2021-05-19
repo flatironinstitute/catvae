@@ -286,7 +286,7 @@ class LightningCatVAE(LightningVAE):
         encode_params = self.model.encoder.parameters()
         decode_params = self.model.decoder.parameters()
         optimizer = torch.optim.Adam(
-            list(encode_params) + list(decode_params) +
+            list(encode_params) + list(decode_params),
             [self.model.log_sigma_sq, self.model.variational_logvars],
             lr=self.hparams.learning_rate)
         if self.hparams.scheduler == 'cosine':
