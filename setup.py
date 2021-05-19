@@ -44,5 +44,4 @@ setup(name='catvae',
       ],
       classifiers=classifiers,
       package_data={},
-      scripts=glob('scripts/*'),
-)
+      scripts=glob('scripts/*'))

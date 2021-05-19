@@ -1,10 +1,9 @@
 
 import numpy as np
-from skbio.stats.composition import alr_inv, closure
+from skbio.stats.composition import closure
 from gneiss.cluster import random_linkage
 from gneiss.balances import _balance_basis
 from scipy.stats import ortho_group
-
 
 
 def multinomial_bioms(k, D, N, M, min_sv=0.11, max_sv=5.0, sigma_sq=0.1):
@@ -89,7 +88,7 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
     Psi = _balance_basis(tree)[0]
     # add batch effects
     alpha = np.abs(np.random.normal(0, 0.5, size=(D)))
-    alphaILR = np.abs(Psi)  @ alpha # variances must always be positive
+    alphaILR = np.abs(Psi)  @ alpha  # variances must always be positive
     m = np.zeros(D - 1)
     B = np.random.multivariate_normal(m, np.diag(alphaILR), size=C)
     batch_idx = np.random.randint(C, size=N)
@@ -115,6 +114,7 @@ def multinomial_batch_bioms(k, D, N, M, C=2,
         eigs=eigs,
         eigvectors=eigvectors
     )
+
 
 def normal_bioms(k, D, N, min_sv=0.11, max_sv=5.0, sigma_sq=0.1):
     """ Simulates biom tables from multivariate gaussian.

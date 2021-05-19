@@ -39,7 +39,7 @@ def closure(x):
         denom = denom.reshape(n, 1)
         return x / denom
     elif len(x.size()) == 1:
-        d = x.size()
+        denom = x.size()
         return x / denom
     else:
         raise ValueError(f'`x` has dimensions {x.shape}, which are too big')
@@ -64,8 +64,8 @@ def ilr_basis(nwk, table):
 
 def alr_basis(D, denom=0):
     """ Computes alr basis (in numpy) """
-    basis = np.eye(D-1)
-    z = - np.ones((D-1, 1))
+    basis = np.eye(D - 1)
+    z = - np.ones((D - 1, 1))
     basis = np.hstack((
         basis[:, :denom], z, basis[:, denom:]))
     return basis

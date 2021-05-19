@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from catvae.composition import ilr, closure
+from catvae.composition import closure
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
 from torch.distributions import Multinomial, Normal
@@ -65,11 +65,11 @@ class CLREmbed(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_dim : int,
-                 hidden_dim : int,
-                 latent_dim : int, bias : bool=False,
-                 dropout = 0.1, batch_norm : bool=True,
-                 depth : int = 1, init_scale : float = 0.001):
+    def __init__(self, input_dim: int,
+                 hidden_dim: int,
+                 latent_dim: int, bias: bool = False,
+                 dropout: float = 0.1, batch_norm: bool = True,
+                 depth: int = 1, init_scale: float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
             first_encoder = nn.Linear(
@@ -140,15 +140,14 @@ class LinearVAE(nn.Module):
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
         if self.transform == 'arcsine':
-            self.input_embed = ArcsineEmbed(self.input_dim + 1, hidden_dim, dropout)
+            self.input_embed = ArcsineEmbed(self.input_dim + 1,
+                                            hidden_dim, dropout)
         if self.transform == 'clr':
-            self.input_embed = CLREmbed(self.input_dim + 1, hidden_dim, dropout)
+            self.input_embed = CLREmbed(self.input_dim + 1,
+                                        hidden_dim, dropout)
 
     def gaussian_kl(self, z_mean, z_logvar):
         return 0.5 * (1 + z_logvar - z_mean * z_mean - torch.exp(z_logvar))
-        # x = Normal(0, 1)
-        # y = Normal(z_mean, torch.exp(z_logvar))
-        # return - kl_divergence(x, y)
 
     def gaussian_kl2(self, m1, s1, m2, s2):
         x = Normal(m1, torch.exp(0.5 * s1))
@@ -223,7 +222,8 @@ class LinearBatchVAE(LinearVAE):
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, latent_dim,
             init_scale, basis=basis, encoder_depth=encoder_depth,
-            bias=bias, transform=transform, dropout=dropout, batch_norm=batch_norm)
+            bias=bias, transform=transform, dropout=dropout,
+            batch_norm=batch_norm)
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         batch_prior = batch_prior
