@@ -8,7 +8,7 @@ help:
 	@echo 'Use "make html" to create html documentation with sphinx'
 	@echo 'Use "make all" to run all the targets listed above.'
 test:
-	$(TEST_COMMAND) deepblast
+	$(TEST_COMMAND) catvae
 pep8:
 	pycodestyle catvae setup.py --ignore=E731,E722,W503
 	flake8 catvae setup.py scripts  --ignore=E731,E722,W503
