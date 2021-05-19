@@ -17,11 +17,11 @@ class TestBiomDataset(unittest.TestCase):
         BiomDataset(self.table)
 
     def test_biom_getitem(self):
-        data = BiomDataset(self.table, self.metadata,  batch_category='batch')
+        data = BiomDataset(self.table, self.metadata, batch_category='batch')
         exp_sample = np.array([
-            65., 66., 12., 94., 37., 43., 97., 69.,  6., 22., 87., 43., 87.,
+            65., 66., 12., 94., 37., 43., 97., 69., 6., 22., 87., 43., 87.,
             5., 51., 53., 26., 54., 51., 76., 15., 92., 30., 43., 97., 98.,
-            7., 43., 25., 51., 75., 39., 13., 90., 89., 48., 60., 79.,  9.,
+            7., 43., 25., 51., 75., 39., 13., 90., 89., 48., 60., 79., 9.,
             97., 35., 47., 13., 44., 70., 94., 80., 62., 99., 73.
         ])
         batch = data[0]

@@ -283,10 +283,10 @@ class LightningCatVAE(LightningVAE):
         #     history_size=100, max_iter=1000)
         optimizer_eta = torch.optim.Adam(
             [self.model.eta], lr=self.hparams.learning_rate)
-
+        encode_params = self.model.encoder.parameters()
+        decode_params = self.model.decoder.parameters()
         optimizer = torch.optim.Adam(
-            list(self.model.encoder.parameters()) +
-            list(self.model.decoder.parameters()) +
+            list(encode_params) + list(decode_params) +
             [self.model.log_sigma_sq, self.model.variational_logvars],
             lr=self.hparams.learning_rate)
         if self.hparams.scheduler == 'cosine':
@@ -467,9 +467,10 @@ class LightningBatchLinearVAE(LightningVAE):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
+        encode_params = self.model.encoder.parameters()
+        decode_params = self.model.decoder.parameters()
         opt_g = torch.optim.Adam(
-            list(self.model.encoder.parameters()) +
-            list(self.model.decoder.parameters()),
+            list(encode_params) + list(decode_params),
             lr=self.hparams.learning_rate)
         opt_b = torch.optim.Adam(
             list(self.model.beta.parameters()) + [self.model.batch_logvars],
