@@ -1,0 +1,15 @@
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - pytorch
+  - pytorch-lightning
+  - gneiss
+  - scikit-bio
+  - biom-format
+  - pandas
+  - scipy
+  - numpy
+  - pip
+    - geotorch
