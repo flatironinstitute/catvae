@@ -1,14 +1,10 @@
 import math
 
 import torch
-from catvae.distributions import constraints
-import torch.distributions.constraints as torch_constraints
 from torch.distributions.distribution import Distribution
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.distributions.multivariate_normal import _batch_mv
 from torch.distributions.utils import _standard_normal
-# from torch.sparse import mm
-from torch import mm
 import numpy as np
 import functools
 
@@ -18,7 +14,8 @@ torch.pi = torch.Tensor([torch.acos(torch.zeros(1)).item() * 2])
 
 def _batch_mahalanobis_factor(L_inv, x):
     r"""
-    Computes the squared Mahalanobis distance :math:`\mathbf{x}^\top\mathbf{M}^{-1}\mathbf{x}`
+    Computes the squared Mahalanobis distance
+    :math:`\mathbf{x}^\top\mathbf{M}^{-1}\mathbf{x}`
     for a factored :math:`\mathbf{M} = \mathbf{L}\mathbf{L}^\top`.
     """
     xL = (x @ L_inv)
@@ -33,6 +30,7 @@ def sparse_identity(d):
     # Id = torch.sparse_coo_tensor(idx, v, requires_grad=False)
     Id = torch.eye(d)
     return Id
+
 
 class MultivariateNormalFactor(Distribution):
 
@@ -56,10 +54,6 @@ class MultivariateNormalFactor(Distribution):
 
         Important : this cannot handle batching
         """
-        arg_constraints = {'mu': torch_constraints.real_vector,
-                           'U': constraints.left_orthonormal,
-                           'diag': torch_constraints.positive,
-                           'n': torch_constraints.positive}
         if mu.dim() < 1:
             raise ValueError("`mu` must be at least one-dimensional.")
         d = U.shape[-1]
@@ -154,13 +148,6 @@ class MultivariateNormalFactorSum(Distribution):
         n : torch.Tensor
             Number of multinomial observations.
         """
-        arg_constraints = {'mu': torch_constraints.real_vector,
-                           'U1': constraints.left_orthonormal,
-                           'diag1': torch_constraints.positive,
-                           'U2': torch_constraints.real_vector,
-                           'diag2': torch_constraints.positive,
-                           'n': torch_constraints.positive}
-
         if mu.dim() < 1:
             raise ValueError("`mu` must be at least one-dimensional.")
         d = U1.shape[-1]
@@ -209,7 +196,7 @@ class MultivariateNormalFactorSum(Distribution):
         else:
             raise ValueError(f'Cannot handle dimensions {self.S1.shape}')
 
-        invS1 = n * self.U1 @ inv @ self.U1.t()
+        invS1 = n * self.U1 @ invP @ self.U1.t()
         W = self.U2
         invD = torch.diag(1 / self.S2)
 
@@ -288,10 +275,6 @@ class MultivariateNormalFactorIdentity(Distribution):
     def __init__(self, mu, sigma2, D, W, validate_args=None):
         """ Multivariate normal distribution with the form
             N(mu, sigma*I + W'DW)"""
-        arg_constraints = {'mu': torch_constraints.real_vector,
-                           'sigma': torch_constraints.positive,
-                           'D': torch_constraints.real_vector,
-                           'W': torch_constraints.real_vector}
         if mu.dim() < 1:
             raise ValueError("`mu` must be at least one-dimensional.")
         d = W.shape[0]
@@ -300,7 +283,6 @@ class MultivariateNormalFactorIdentity(Distribution):
         self.D = D
         self.W = W
         self.d = d
-        #self.Id = sparse_identity(self.d).to(self.mu.device)
         batch_shape, event_shape = self.mu.shape[:-1], self.mu.shape[-1:]
         super(MultivariateNormalFactorIdentity, self).__init__(
             batch_shape, event_shape, validate_args=validate_args)
@@ -308,10 +290,8 @@ class MultivariateNormalFactorIdentity(Distribution):
     @property
     def covariance_matrix(self):
         wdw = self.W @ torch.diag(self.D) @ self.W.t()
-        #Id = torch.eye(self.d).to(self.mu.device)
-        #s2 = self.Id * self.sigma2
         idx = torch.arange(self.d)
-        wdw[idx, idx] +=self.sigma2
+        wdw[idx, idx] += self.sigma2
         return wdw
 
     @property
@@ -319,15 +299,11 @@ class MultivariateNormalFactorIdentity(Distribution):
         # Woodbury identity
         # inv(A + WDWt) = invA - invA @ W inv(invD + Wt invA W) Wt invA
         W, D = self.W, self.D
-        #Id = torch.eye(self.d).to(self.mu.device)
-        #invA = self.Id * (1 / self.sigma2)
         invD = torch.diag(1 / D)
-        #invAW = mm(invA, W)
         invAW = W / self.sigma2
         C = invD + W.t() @ invAW
         invC = torch.inverse(C)
         cor = invAW @ invC @ invAW.t()
-        #res = (-cor) + invA
         idx = torch.arange(self.d)
         cor[idx, idx] -= (1 / self.sigma2)
         return -cor
@@ -336,11 +312,8 @@ class MultivariateNormalFactorIdentity(Distribution):
     def log_det(self):
         # Matrix determinant lemma
         # det(A + WDWt) = det(invD + Wt invA W) det(D) det (A)
-        W, D = self.W, self.D
-        #Id = torch.eye(self.d).to(self.mu.device)
-        #invA = self.Id * (1 / self.sigma2)
+        W = self.W
         invD = torch.diag(1 / self.D)
-        #invAW = mm(invA, W)
         invAW = W / self.sigma2
         logdet_A = torch.log(self.sigma2) * self.d
         logdet_C = torch.slogdet(invD + W.t() @ invAW)[1]

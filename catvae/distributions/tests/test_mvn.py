@@ -1,14 +1,9 @@
 import unittest
-from catvae.distributions.mvn import MultivariateNormalFactor
-from catvae.distributions.mvn import MultivariateNormalFactorSum
 from catvae.distributions.mvn import MultivariateNormalFactorIdentity
 from torch.distributions import MultivariateNormal
 from catvae.distributions.utils import seed_all
 import torch
 import torch.testing as tt
-from gneiss.balances import _balance_basis
-from gneiss.cluster import random_linkage
-import numpy as np
 import math
 
 
@@ -33,6 +28,7 @@ class TestMultivariateNormalFactorIdentity(unittest.TestCase):
             loc, self.s2, self.D, self.W)
         cov = dist.covariance_matrix
         self.assertEqual(cov.shape, (self.d, self.d))
+        tt.assert_allclose(exp, cov)
 
     def test_precision_matrix(self):
         # tests how accurately the inverse covariance matrix can be computed
@@ -70,12 +66,12 @@ class TestMultivariateNormalFactorIdentity(unittest.TestCase):
         samples = dist2.rsample([10000])
         exp_logp = dist2.log_prob(samples)
 
-
         dist1 = MultivariateNormalFactorIdentity(
             loc, self.s2, self.D, self.W)
         res_logp = dist1.log_prob(samples)
 
-        self.assertAlmostEqual(float(exp_logp.mean()), float(res_logp.mean()), places=3)
+        self.assertAlmostEqual(float(exp_logp.mean()),
+                               float(res_logp.mean()), places=3)
 
     def test_entropy(self):
         pass
