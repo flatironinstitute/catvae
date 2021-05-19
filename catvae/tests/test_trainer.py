@@ -90,9 +90,7 @@ class TestBatchVAEModel(unittest.TestCase):
             max_epochs=args.epochs,
             gpus=args.gpus,
             check_val_every_n_epoch=1,
-            # profiler=profiler,
             fast_dev_run=False,
-            # auto_scale_batch_size='power'
         )
         trainer.fit(model)
 
