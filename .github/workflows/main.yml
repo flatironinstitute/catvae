@@ -41,7 +41,7 @@ jobs:
 
       - name: Install conda packages
         shell: bash -l {0}
-        run: conda install --file ci/conda_requirements.yml
+        run: conda install --file ../../ci/conda_requirements.yml
 
       - name: Install catvae
         shell: bash -l {0}
