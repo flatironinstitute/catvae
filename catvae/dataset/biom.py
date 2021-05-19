@@ -1,5 +1,3 @@
-import os
-import re
 import biom
 import math
 import logging
@@ -7,7 +5,6 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from typing import List
 
 
 logger = logging.getLogger(__name__)
