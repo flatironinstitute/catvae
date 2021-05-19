@@ -12,7 +12,6 @@ import argparse
 import pandas as pd
 
 from scipy.stats import pearsonr
-import matplotlib.pyplot as plt
 from scipy.spatial.distance import pdist
 
 
@@ -28,10 +27,9 @@ class TestBatchVAEModel(unittest.TestCase):
         samp_ids = list(map(str, range(Y.shape[0])))
         obs_ids = list(map(str, range(Y.shape[1])))
         train = Table(Y[:parts * 8].T, obs_ids, samp_ids[:parts * 8])
-        test = Table(Y[parts * 8 : parts * 9].T,
-                     obs_ids, samp_ids[parts * 8 : parts * 9])
+        test = Table(Y[parts * 8: parts * 9].T,
+                     obs_ids, samp_ids[parts * 8: parts * 9])
         valid = Table(Y[parts * 9:].T, obs_ids, samp_ids[parts * 9:])
-        tree = self.sims
         with biom_open('train.biom', 'w') as f:
             train.to_hdf5(f, 'train')
         with biom_open('test.biom', 'w') as f:
@@ -128,10 +126,9 @@ class TestVAEModel(unittest.TestCase):
         samp_ids = list(map(str, range(Y.shape[0])))
         obs_ids = list(map(str, range(Y.shape[1])))
         train = Table(Y[:parts * 8].T, obs_ids, samp_ids[:parts * 8])
-        test = Table(Y[parts * 8 : parts * 9].T,
-                     obs_ids, samp_ids[parts * 8 : parts * 9])
+        test = Table(Y[parts * 8: parts * 9].T,
+                     obs_ids, samp_ids[parts * 8: parts * 9])
         valid = Table(Y[parts * 9:].T, obs_ids, samp_ids[parts * 9:])
-        tree = self.sims
         with biom_open('train.biom', 'w') as f:
             train.to_hdf5(f, 'train')
         with biom_open('test.biom', 'w') as f:
