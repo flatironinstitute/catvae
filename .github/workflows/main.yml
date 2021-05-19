@@ -41,7 +41,11 @@ jobs:
 
       - name: Install conda packages
         shell: bash -l {0}
-        run: conda install --file ../../ci/conda_requirements.yml
+        run: conda install pytorch pytorch-lightning gneiss scikit-bio biom-format pandas scipy numpy -c pytorch -c conda-forge
+
+      - name: Install pip packages
+        shell: bash -l {0}
+        run: pip install geotorch
 
       - name: Install catvae
         shell: bash -l {0}
