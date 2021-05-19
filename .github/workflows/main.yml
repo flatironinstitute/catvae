@@ -1,8 +1,8 @@
-# This is a basic workflow to help you get started with Actions
+# This is based on the empress github actions
 
 name: CI
 
-# Controls when the action will run. 
+# Controls when the action will run.
 on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
@@ -20,17 +20,33 @@ jobs:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    strategy:
+      matrix:
+        python-version: ["3.7", "3.8", "3.9"]
+
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: birdman
+          python-version: ${{ matrix.python-version }}
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+      - name: Test conda installation
+        shell: bash -l {0}
+        run: conda info
+
+      - name: Install conda packages
+        shell: bash -l {0}
+        run: conda install --file ci/conda_requirements.yml
+
+      - name: Install catvae
+        shell: bash -l {0}
+        run: pip install -e .[dev]
+
+      - name: Run tests
+        shell: bash -l {0}
+        run: make all
