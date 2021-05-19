@@ -1,14 +1,7 @@
-import os
-import torch
-import pystan
-import numpy as np
-import pandas as pd
 import argparse
-import matplotlib.pyplot as plt
 from sklearn.decomposition import LatentDirichletAllocation as LDA
 import pickle
 from biom import load_table
-
 
 
 def main(args):
@@ -23,7 +16,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train-biom', help='Training biom file', required=True)
+    parser.add_argument('--train-biom', help='Training biom file',
+                        required=True)
     parser.add_argument('--n-latent', type=int, help='Number of components')
     parser.add_argument('--iterations', type=int,
                         default=10000, required=False,

@@ -21,8 +21,7 @@ def main(args):
     print(args)
     print(model)
 
-    if (args.eigvectors is not None and
-        args.eigvalues is not None):
+    if args.eigvectors is not None and args.eigvalues is not None:
         eigvectors = np.loadtxt(args.eigvectors)
         eigvalues = np.loadtxt(args.eigvalues)
         model.set_eigs(eigvectors, eigvalues)

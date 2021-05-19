@@ -20,8 +20,7 @@ def main(args):
         model = LightningBatchLinearVAE(args)
     print(args)
     print(model)
-    if (args.eigvectors is not None and
-        args.eigvalues is not None):
+    if args.eigvectors is not None and args.eigvalues is not None:
         eigvectors = np.loadtxt(args.eigvectors)
         eigvalues = np.loadtxt(args.eigvalues)
         model.set_eigs(eigvectors, eigvalues)
@@ -66,9 +65,11 @@ if __name__ == '__main__':
     parser.add_argument('--grad-accum', type=int, default=1)
     parser.add_argument('--grad-clip', type=int, default=10)
     parser.add_argument('--eigvalues', type=str, default=None,
-                        help='Ground truth eigenvalues (optional)', required=False)
+                        help='Ground truth eigenvalues (optional)',
+                        required=False)
     parser.add_argument('--eigvectors', type=str, default=None,
-                        help='Ground truth eigenvectors (optional)', required=False)
+                        help='Ground truth eigenvectors (optional)',
+                        required=False)
     parser.add_argument('--load-from-checkpoint', type=str, default=None)
     args = parser.parse_args()
     main(args)

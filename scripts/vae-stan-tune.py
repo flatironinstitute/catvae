@@ -2,9 +2,7 @@ import os
 import torch
 import pystan
 import numpy as np
-import pandas as pd
 import argparse
-import matplotlib.pyplot as plt
 from catvae.trainer import LightningCatVAE, LightningLinearVAE
 import pickle
 from biom import load_table
@@ -71,9 +69,7 @@ def main(args):
                 pickle.dump(sm, f)
 
     W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
-    # b = model.model.decoder.bias.detach().cpu().numpy().squeeze()
     sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
-    epochs = args.iterations // args.checkpoint_interval
     table = load_table(args.train_biom)
     N, D, K = table.shape[1], table.shape[0], args.n_latent
     psi = np.array(model.set_basis(N, table).todense())
@@ -84,7 +80,8 @@ def main(args):
         fit = sm.sampling(data=fit_data, iter=args.iterations,
                           chains=args.chains, init=init)
         print('Sampling from posterior distribution')
-        la = fit.extract(permuted=False, pars=['W', 'sigma'])  # return a dictionary of arrays
+        # return a dictionary of arrays
+        la = fit.extract(permuted=False, pars=['W', 'sigma'])
         print('Saving file')
         with open(f'{args.output_directory}/hmc-results.pkl', 'wb') as f:
             pickle.dump(la, f)

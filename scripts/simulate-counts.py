@@ -2,7 +2,6 @@ import argparse
 import numpy as np
 from biom import Table
 from catvae.sim import multinomial_bioms
-from biom import Table
 from biom.util import biom_open
 import os
 
@@ -18,8 +17,8 @@ def main(args):
     samp_ids = list(map(str, range(Y.shape[0])))
     obs_ids = list(map(str, range(Y.shape[1])))
     train = Table(Y[:parts * 8].T, obs_ids, samp_ids[:parts * 8])
-    test = Table(Y[parts * 8 : parts * 9].T,
-                 obs_ids, samp_ids[parts * 8 : parts * 9])
+    test = Table(Y[parts * 8: parts * 9].T,
+                 obs_ids, samp_ids[parts * 8: parts * 9])
     valid = Table(Y[parts * 9:].T, obs_ids, samp_ids[parts * 9:])
     output_dir = args.output_dir
     with biom_open(f'{output_dir}/train.biom', 'w') as f:
