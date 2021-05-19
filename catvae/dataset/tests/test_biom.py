@@ -14,7 +14,7 @@ class TestBiomDataset(unittest.TestCase):
                                       index_col=0)
 
     def test_biom(self):
-        data = BiomDataset(self.table)
+        BiomDataset(self.table)
 
     def test_biom_getitem(self):
         data = BiomDataset(self.table, self.metadata,  batch_category='batch')
@@ -63,7 +63,7 @@ class TestBiomBatchDataset(unittest.TestCase):
             7., 43., 25., 51., 75., 39., 13., 90., 89., 48., 60., 79.,  9.,
             97., 35., 47., 13., 44., 70., 94., 80., 62., 99., 73.
         ])
-        exp_batch_diff=np.array([
+        exp_batch_diff = np.array([
             59.16666667, 48.16666667, 42.66666667, 75.83333333, 54.5,
             50.66666667, 60.83333333, 51.66666667, 41.83333333, 73.33333333,
             28.33333333, 30.16666667, 81.66666667, 57.66666667, 48.,
