@@ -34,7 +34,7 @@ def sparse_identity(d):
 
 class MultivariateNormalFactor(Distribution):
 
-    def __init__(self, mu, U, diag, n, validate_args=None):
+    def __init__(self, mu, U, diag, n, validate_args=False):
         """ Asymptotic approximation of the multinomial distribution.
 
         Parameters
@@ -122,7 +122,7 @@ class MultivariateNormalFactor(Distribution):
 
 class MultivariateNormalFactorSum(Distribution):
 
-    def __init__(self, mu, U1, diag1, U2, diag2, n, validate_args=None):
+    def __init__(self, mu, U1, diag1, U2, diag2, n, validate_args=False):
         """ Multivariate normal distribution parameterized as the
             sum of two normal distributions whose covariances can be
             represented as an eigenvalue decomposition.
@@ -272,7 +272,7 @@ class MultivariateNormalFactorSum(Distribution):
 
 class MultivariateNormalFactorIdentity(Distribution):
 
-    def __init__(self, mu, sigma2, D, W, validate_args=None):
+    def __init__(self, mu, sigma2, D, W, validate_args=False):
         """ Multivariate normal distribution with the form
             N(mu, sigma*I + W'DW)"""
         if mu.dim() < 1:
