@@ -8,7 +8,6 @@ from biom import Table
 from biom.util import biom_open
 import numpy as np
 from pytorch_lightning import Trainer
-import argparse
 import pandas as pd
 
 from scipy.stats import pearsonr
@@ -127,7 +126,8 @@ class TestBatchVAEModel(unittest.TestCase):
         model.set_eigs(self.sims['eigvectors'], self.sims['eigs'])
         print(model)
         dm = BiomDataModule('train.biom', 'test.biom', 'valid.biom',
-                            metadata='metadata.txt', batch_category='batch_category',
+                            metadata='metadata.txt',
+                            batch_category='batch_category',
                             batch_size=50)
 
         trainer = Trainer(

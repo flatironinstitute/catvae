@@ -4,14 +4,14 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
-    CosineAnnealingWarmRestarts, StepLR,
+    CosineAnnealingWarmRestarts,
     CosineAnnealingLR
 )
 from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
     collate_batch_f
 )
-from catvae.models import LinearCatVAE, LinearVAE, LinearBatchVAE
+from catvae.models import LinearVAE, LinearBatchVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
@@ -27,8 +27,8 @@ import os
 
 class BiomDataModule(pl.LightningDataModule):
     def __init__(self, train_biom, test_biom, valid_biom,
-                 metadata = None, batch_category=None,
-                 batch_size = 10, num_workers = 1):
+                 metadata=None, batch_category=None,
+                 batch_size=10, num_workers=1):
         super().__init__()
         self.train_biom = train_biom
         self.test_biom = test_biom

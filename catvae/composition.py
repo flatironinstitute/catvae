@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.sparse import mm
-from gneiss.util import match_tips
 from gneiss.balances import sparse_balance_basis
 from skbio import TreeNode
 
