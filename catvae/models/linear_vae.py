@@ -156,7 +156,9 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         logp = (self.Psi.t() @ x_out.t()).t()
-        mult_loss = Multinomial(logits=logp).log_prob(x_in).mean()
+        mult_loss = Multinomial(
+            logits=logp, validate_args=False  # weird ...
+        ).log_prob(x_in).mean()
         return mult_loss
 
     def impute(self, x):
@@ -213,8 +215,9 @@ class LinearBatchVAE(LinearVAE):
            Number of hidden dimensions within latent space
         batch_dim : int
            Number of batches (i.e. studies) to do batch correction
-        batch_priors : np.array of float
-           Normal variance priors for batch effects of shape D
+        batch_prior : np.array of float
+           Normal variance priors for batch effects of shape D - 1.
+           Note that these priors are assumed to be in ILR coordinates.
         transform : str
            Choice of input transform.  Can choose from
            arcsine, pseudocount and rclr (TODO).

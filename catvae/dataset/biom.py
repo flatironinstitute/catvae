@@ -66,6 +66,7 @@ class BiomDataset(Dataset):
 
     def __getitem__(self, i):
         """ Returns all of the samples for a given subject
+
         Returns
         -------
         counts : np.array
