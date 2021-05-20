@@ -50,7 +50,7 @@ class TestVAEModel(unittest.TestCase):
 
     def test_run(self):
         model = MultVAE(n_input=self.D, n_latent=self.k,
-                        n_hidden=16,  basis='basis.nwk',
+                        n_hidden=16, basis='basis.nwk',
                         dropout=0.5, bias=True, batch_norm=True,
                         encoder_depth=1, learning_rate=0.1,
                         scheduler='cosine', transform='pseudocount')
@@ -117,7 +117,7 @@ class TestBatchVAEModel(unittest.TestCase):
 
     def test_fit(self):
         model = MultBatchVAE(n_input=self.D, n_latent=self.k,
-                             n_hidden=16,  n_batches=self.C,
+                             n_hidden=16, n_batches=self.C,
                              basis='basis.nwk', batch_prior='batch_priors.txt',
                              dropout=0.5, bias=True, batch_norm=True,
                              encoder_depth=1, learning_rate=0.1,
