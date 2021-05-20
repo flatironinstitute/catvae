@@ -4,14 +4,14 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
-    CosineAnnealingWarmRestarts, StepLR,
+    CosineAnnealingWarmRestarts,
     CosineAnnealingLR
 )
 from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
     collate_batch_f
 )
-from catvae.models import LinearCatVAE, LinearVAE, LinearBatchVAE
+from catvae.models import LinearVAE, LinearBatchVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
@@ -25,22 +25,110 @@ import numpy as np
 import os
 
 
-class LightningVAE(pl.LightningModule):
+class BiomDataModule(pl.LightningDataModule):
+    def __init__(self, train_biom, test_biom, valid_biom,
+                 metadata=None, batch_category=None,
+                 batch_size=10, num_workers=1):
+        super().__init__()
+        self.train_biom = train_biom
+        self.test_biom = test_biom
+        self.val_biom = valid_biom
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        if metadata is not None:
+            self.metadata = pd.read_table(
+                metadata, dtype=str)
+            index_name = self.metadata.columns[0]
+            self.metadata = self.metadata.set_index(index_name)
+        else:
+            self.metadata = None
+        self.batch_category = batch_category
+        if self.batch_category is None:
+            self.collate_f = collate_single_f
+        else:
+            self.collate_f = collate_batch_f
 
-    def __init__(self, args):
-        super(LightningVAE, self).__init__()
-        self.hparams = args
+    def train_dataloader(self):
+        train_dataset = BiomDataset(
+            load_table(self.train_biom),
+            metadata=self.metadata, batch_category=self.batch_category)
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f, shuffle=True,
+            num_workers=self.num_workers, drop_last=True,
+            pin_memory=True)
+        return train_dataloader
+
+    def val_dataloader(self):
+        val_dataset = BiomDataset(
+            load_table(self.val_biom),
+            metadata=self.metadata, batch_category=self.batch_category)
+        val_dataloader = DataLoader(
+            val_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f, shuffle=False,
+            num_workers=self.num_workers, drop_last=True,
+            pin_memory=True)
+        return val_dataloader
+
+    def test_dataloader(self):
+        test_dataset = BiomDataset(
+            load_table(self.test_biom),
+            metadata=self.metadata, batch_category=self.batch_category)
+        test_dataloader = DataLoader(
+            test_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f,
+            shuffle=False, num_workers=self.num_workers,
+            drop_last=True, pin_memory=True)
+        return test_dataloader
+
+
+class MultVAE(pl.LightningModule):
+    def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
+                 dropout=0.5, bias=True, batch_norm=False,
+                 encoder_depth=1, learning_rate=0.001, scheduler='cosine',
+                 transform='pseudocount'):
+        super().__init__()
+        # a hack to avoid the save_hyperparameters anti-pattern
+        # https://github.com/PyTorchLightning/pytorch-lightning/issues/7443
+        self._hparams = {
+            'n_input': n_input,
+            'n_latent': n_latent,
+            'n_hidden': n_hidden,
+            'basis': basis,
+            'dropout': dropout,
+            'bias': bias,
+            'batch_norm': batch_norm,
+            'encoder_depth': encoder_depth,
+            'learning_rate': learning_rate,
+            'scheduler': scheduler,
+            'transform': transform
+        }
+        basis = self.set_basis(n_input, basis)
+        self.vae = LinearVAE(
+            n_input, basis=basis,
+            hidden_dim=n_hidden,
+            latent_dim=n_latent,
+            bias=bias,
+            encoder_depth=encoder_depth,
+            batch_norm=batch_norm,
+            dropout=dropout,
+            transform=transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-    def set_basis(self, n_input, table):
+    def set_basis(self, n_input, basis=None):
         # a sneak peek into file types to initialize model
-        has_basis = self.hparams.basis is not None
-        if (has_basis and os.path.exists(self.hparams.basis)):
-            basis = ilr_basis(self.hparams.basis, table)
-        elif self.hparams.basis == 'alr':
+        has_basis = basis is not None
+        if (has_basis and os.path.exists(basis)):
+            basis = ilr_basis(basis)
+            assert basis.shape[1] == n_input, (
+                f'Basis shape {basis.shape} does '
+                f'not match tree dimension {len(n_input)}. '
+                'Also make sure if your tree if aligned correctly '
+                'with `gneiss.util.match_tips`')
+        elif basis == 'alr':
             basis = coo_matrix(alr_basis(n_input))
-        elif self.hparams.basis == 'identity':
+        elif basis == 'identity':
             basis = coo_matrix(identity_basis(n_input))
         else:
             basis = None
@@ -51,10 +139,10 @@ class LightningVAE(pl.LightningModule):
         self.gt_eigs = gt_eigs
 
     def forward(self, X):
-        return self.model(X)
+        return self.vae(X)
 
     def to_latent(self, X):
-        return self.model.encode(X)
+        return self.vae.encode(X)
 
     def initialize_logging(self, root_dir='./', logging_path=None):
         if logging_path is None:
@@ -65,43 +153,16 @@ class LightningVAE(pl.LightningModule):
         writer = SummaryWriter(full_path)
         return writer
 
-    def train_dataloader(self):
-        train_dataset = BiomDataset(load_table(self.hparams.train_biom))
-        train_dataloader = DataLoader(
-            train_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f, shuffle=True,
-            num_workers=self.hparams.num_workers, drop_last=True,
-            pin_memory=True)
-        return train_dataloader
-
-    def val_dataloader(self):
-        val_dataset = BiomDataset(load_table(self.hparams.val_biom))
-        val_dataloader = DataLoader(
-            val_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f, shuffle=False,
-            num_workers=self.hparams.num_workers, drop_last=True,
-            pin_memory=True)
-        return val_dataloader
-
-    def test_dataloader(self):
-        test_dataset = BiomDataset(load_table(self.hparams.test_biom))
-        test_dataloader = DataLoader(
-            test_dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_single_f,
-            shuffle=False, num_workers=self.hparams.num_workers,
-            drop_last=True, pin_memory=True)
-        return test_dataloader
-
     def training_step(self, batch, batch_idx):
-        self.model.train()
+        self.vae.train()
         counts = batch.to(self.device)
-        loss = self.model(counts)
+        loss = self.vae(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
             current_lr = lr
         else:
-            current_lr = self.hparams.learning_rate
+            current_lr = self.learning_rate
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss, 'lr': current_lr
         }
@@ -111,11 +172,11 @@ class LightningVAE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             counts = batch
-            loss = self.model(counts)
+            loss = self.vae(counts)
             assert torch.isnan(loss).item() is False
 
             # Record the actual loss.
-            rec_err = self.model.get_reconstruction_loss(batch)
+            rec_err = self.vae.get_reconstruction_loss(batch)
             tensorboard_logs = {'val_loss': loss,
                                 'val_rec_err': rec_err}
 
@@ -131,7 +192,7 @@ class LightningVAE(pl.LightningModule):
         rec_err = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_rec_err',
                                           rec_err, self.global_step)
-        ortho, eig_err = metric_orthogonality(self.model)
+        ortho, eig_err = metric_orthogonality(self.vae)
         self.logger.experiment.add_scalar('orthogonality',
                                           ortho, self.global_step)
 
@@ -142,10 +203,10 @@ class LightningVAE(pl.LightningModule):
         )
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
-            ms = metric_subspace(self.model, self.gt_eigvectors, self.gt_eigs)
-            ma = metric_alignment(self.model, self.gt_eigvectors)
-            mp = metric_procrustes(self.model, self.gt_eigvectors)
-            mr = metric_pairwise(self.model, self.gt_eigvectors, self.gt_eigs)
+            ms = metric_subspace(self.vae, self.gt_eigvectors, self.gt_eigs)
+            ma = metric_alignment(self.vae, self.gt_eigvectors)
+            mp = metric_procrustes(self.vae, self.gt_eigvectors)
+            mr = metric_pairwise(self.vae, self.gt_eigvectors, self.gt_eigs)
             tlog = {'subspace_distance': ms, 'alignment': ma, 'procrustes': mp}
             self.logger.experiment.add_scalar(
                 'procrustes', mp, self.global_step)
@@ -164,29 +225,17 @@ class LightningVAE(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine':
+            self.vae.parameters(), lr=self.hparams['learning_rate'])
+        if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
-        # elif self.hparams.scheduler == 'cosine':
-        #     scheduler = CosineAnnealingLR(
-        #         optimizer, T_max=self.hparams.steps_per_batch * 10)
-        elif self.hparams.scheduler == 'steplr':
-            m = 1e-1  # maximum learning rate
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = self.hparams.epochs // steps
-            scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'inv_steplr':
-            m = 1e-1  # maximum learning rate
-            optimizer = torch.optim.Adam(
-                self.model.parameters(), lr=m)
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = self.hparams.epochs // steps
-            scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'none':
+        elif self.hparams['scheduler'] == 'cosine':
+            scheduler = CosineAnnealingLR(
+                optimizer, T_max=10)
+        elif self.hparams['scheduler'] == 'none':
             return [optimizer]
         else:
-            s = self.hparams.scheduler
+            s = self.scheduler
             raise ValueError(f'{s} is not implemented.')
         return [optimizer], [scheduler]
 
@@ -194,12 +243,6 @@ class LightningVAE(pl.LightningModule):
     def add_model_specific_args(parent_parser, add_help=True):
         parser = argparse.ArgumentParser(parents=[parent_parser],
                                          add_help=add_help)
-        parser.add_argument(
-            '--train-biom', help='Training biom file', required=True)
-        parser.add_argument(
-            '--test-biom', help='Testing biom file', required=True)
-        parser.add_argument(
-            '--val-biom', help='Validation biom file', required=True)
         parser.add_argument(
             '--basis',
             help=('Basis.  Options include `alr`, `identity` or a file. '
@@ -229,16 +272,6 @@ class LightningVAE(pl.LightningModule):
             '--learning-rate', help='Learning rate',
             required=False, type=float, default=1e-3)
         parser.add_argument(
-            '--batch-size', help='Training batch size',
-            required=False, type=int, default=32)
-        parser.add_argument(
-            '--steps-per-batch',
-            help='Number of gradient descent steps per batch.',
-            required=False, type=int, default=10)
-        parser.add_argument(
-            '--use-analytic-elbo', help='Use analytic formulation of elbo.',
-            required=False, type=bool, default=True)
-        parser.add_argument(
             '--transform', help=('Specifies transform for preprocessing '
                                  '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
@@ -256,158 +289,65 @@ class LightningVAE(pl.LightningModule):
         return parser
 
 
-# Main VAE classes
-class LightningCatVAE(LightningVAE):
-    def __init__(self, args):
-        super(LightningCatVAE, self).__init__(args)
-        self.hparams = args
-        table = load_table(self.hparams.train_biom)
-        n_input = table.shape[0]
-        basis = self.set_basis(n_input, table)
-        self.model = LinearCatVAE(
-            n_input,
-            hidden_dim=self.hparams.n_latent,
-            basis=basis,
-            imputer=None,
-            encoder_depth=self.hparams.encoder_depth,
-            batch_size=self.hparams.batch_size,
-            bias=self.hparams.bias
-        )
-        self.gt_eigvectors = None
-        self.gt_eigs = None
-
-    def configure_optimizers(self):
-        # optimizer_eta = torch.optim.LBFGS(
-        #     [self.model.eta], lr=self.hparams.learning_rate,
-        #     tolerance_grad=1e-7,
-        #     history_size=100, max_iter=1000)
-        optimizer_eta = torch.optim.Adam(
-            [self.model.eta], lr=self.hparams.learning_rate)
-        encode_params = self.model.encoder.parameters()
-        decode_params = self.model.decoder.parameters()
-        optimizer = torch.optim.Adam(
-            list(encode_params) + list(decode_params),
-            [self.model.log_sigma_sq, self.model.variational_logvars],
-            lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine':
-            scheduler = CosineAnnealingWarmRestarts(
-                optimizer, T_0=2, T_mult=2)
-        elif self.hparams.scheduler == 'steplr':
-            m = 1e-5  # min learning rate
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = 100 * self.hparams.epochs // steps
-            scheduler = StepLR(optimizer, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'none':
-            return [optimizer_eta, optimizer]
-        else:
-            s = self.hparams.scheduler
-            raise ValueError(f'{s} is not implemented.')
-        return [optimizer_eta, optimizer], [scheduler]
-
-    def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_i,
-                       second_order_closure, on_tpu=False,
-                       using_native_amp=False, using_lbfgs=False):
-        # perform multiple steps with LBFGS to optimize eta
-        if optimizer_i == 0:
-            for _ in range(self.hparams.steps_per_batch):
-                optimizer.step(second_order_closure)
-                optimizer.zero_grad()
-
-        # update all of the other parameters once
-        # eta is optimized
-        if optimizer_i == 1:
-            for _ in range(self.hparams.steps_per_batch):
-                # print('current_epoch', current_epoch,
-                #       'batch', batch_nb, 'optimizer', optimizer_i, loss)
-                optimizer.step(second_order_closure)
-                optimizer.zero_grad()
-
-        loss_ = second_order_closure().item()
-        self.logger.experiment.add_scalar(
-            'train_loss', loss_, self.global_step)
-
-    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
-        counts = batch.to(self.device)
-        self.model.reset(counts)
-
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        return super().training_step(batch, batch_idx)
-
-
-class LightningLinearVAE(LightningVAE):
-    def __init__(self, args):
-        super(LightningLinearVAE, self).__init__(args)
-        self.hparams = args
-
-        # a sneak peek into file types to initialize model
-        table = load_table(self.hparams.train_biom)
-        n_input = table.shape[0]
-        basis = self.set_basis(n_input, table)
-        self.model = LinearVAE(
-            n_input, basis=basis,
-            hidden_dim=self.hparams.n_hidden,
-            latent_dim=self.hparams.n_latent,
-            bias=self.hparams.bias,
-            encoder_depth=self.hparams.encoder_depth,
-            batch_norm=self.hparams.batch_norm,
-            dropout=self.hparams.dropout,
-            transform=self.hparams.transform)
-        self.gt_eigvectors = None
-        self.gt_eigs = None
-
-
 # Batch correction methods
-class LightningBatchLinearVAE(LightningVAE):
-    def __init__(self, args):
-        super(LightningBatchLinearVAE, self).__init__(args)
-        self.hparams = args
+class MultBatchVAE(MultVAE):
+    def __init__(self, n_input, n_latent, n_hidden, n_batches, basis,
+                 dropout, bias, batch_norm, batch_prior,
+                 encoder_depth, learning_rate, scheduler,
+                 transform):
+        super().__init__(n_input, n_latent, n_hidden, basis,
+                         dropout, bias, batch_norm,
+                         encoder_depth, learning_rate, scheduler,
+                         transform)
+        self._hparams = {
+            'n_input': n_input,
+            'n_latent': n_latent,
+            'n_hidden': n_hidden,
+            'basis': basis,
+            'dropout': dropout,
+            'bias': bias,
+            'batch_norm': batch_norm,
+            'encoder_depth': encoder_depth,
+            'n_batches': n_batches,
+            'batch_prior': batch_prior,
+            'learning_rate': learning_rate,
+            'scheduler': scheduler,
+            'transform': transform,
+        }
         self.gt_eigvectors = None
         self.gt_eigs = None
-        # we'll read in the metadata / table twice, whatever
-        # We may need to adjust this in the future.
-        table = load_table(self.hparams.train_biom)
-        # It is assumed that the batch prior is already synced to
-        # the table
-        batch_prior = pd.read_table(self.hparams.batch_prior, dtype=str)
+
+        batch_prior = pd.read_table(batch_prior, dtype=str)
         batch_prior = batch_prior.set_index(batch_prior.columns[0])
         batch_prior = batch_prior.values.astype(np.float64)
         batch_prior = batch_prior.reshape(1, -1).squeeze()
-        assert table.shape[0] == len(batch_prior) + 1, (
-            table.shape, batch_prior.shape)
-        self.batch_prior = torch.Tensor(batch_prior).float()
-        self.metadata = pd.read_table(
-            self.hparams.sample_metadata, dtype=str)
-        # extract the number of study batches
-        self.n_batches = len(set(self.metadata[self.hparams.batch_category]))
-        # initialize batch classifier
-        logcounts = table.matrix_data.tocoo()
-        logcounts.data = np.log(logcounts.data)
-        n_input = table.shape[0]
-        basis = self.set_basis(n_input, table)
-        self.model = LinearBatchVAE(
+        batch_prior = torch.Tensor(batch_prior).float()
+        basis = self.set_basis(n_input, basis)
+
+        self.vae = LinearBatchVAE(
             n_input,
-            hidden_dim=self.hparams.n_hidden,
-            latent_dim=self.hparams.n_latent,
-            batch_dim=self.n_batches,
-            batch_prior=self.batch_prior,
+            hidden_dim=n_hidden,
+            latent_dim=n_latent,
+            batch_dim=n_batches,
+            batch_prior=batch_prior,
             basis=basis,
-            encoder_depth=self.hparams.encoder_depth,
-            bias=self.hparams.bias,
-            transform=self.hparams.transform)
+            encoder_depth=encoder_depth,
+            bias=bias,
+            transform=transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
     def initialize_batch(self, beta):
         # apparently this is not recommended, but fuck it
-        self.model.beta.weight.data = beta.data
-        self.model.beta.requires_grad = False
-        self.model.beta.weight.requires_grad = False
+        self.vae.beta.weight.data = beta.data
+        self.vae.beta.requires_grad = False
+        self.vae.beta.weight.requires_grad = False
 
     def initialize_decoder(self, W):
         # can't initialize easily W due to geotorch
         # https://github.com/Lezcano/geotorch/issues/14
-        self.model.decoder.weight = W
-        self.model.decoder.weight.requires_grad = False
+        self.vae.decoder.weight = W
+        self.vae.decoder.weight.requires_grad = False
 
     def to_latent(self, X, b):
         """ Casts to latent space
@@ -419,45 +359,20 @@ class LightningBatchLinearVAE(LightningVAE):
         b : torch.Tensor
            Class prediction probabilities for batch prediction (N x k)
         """
-        return self.model.encode_marginalized(X, b)
-
-    def _dataloader(self, biom_file, shuffle=True):
-        table = load_table(biom_file)
-        self.metadata = pd.read_table(
-            self.hparams.sample_metadata, dtype=str)
-        index_name = self.metadata.columns[0]
-        metadata = self.metadata.set_index(index_name)
-        _dataset = BiomDataset(
-            table, metadata,
-            batch_category=self.hparams.batch_category)
-        _dataloader = DataLoader(
-            _dataset, batch_size=self.hparams.batch_size,
-            collate_fn=collate_batch_f, shuffle=shuffle,
-            num_workers=self.hparams.num_workers, drop_last=True,
-            pin_memory=True)
-        return _dataloader
-
-    def train_dataloader(self):
-        return self._dataloader(self.hparams.train_biom)
-
-    def val_dataloader(self):
-        return self._dataloader(self.hparams.val_biom, shuffle=False)
-
-    def test_dataloader(self):
-        return self._dataloader(self.hparams.test_biom, shuffle=False)
+        return self.vae.encode_marginalized(X, b)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
             current_lr = lr
         else:
-            current_lr = self.hparams.learning_rate
+            current_lr = self.hparams['learning_rate']
 
         counts, batch_ids = batch
         counts = counts.to(self.device)
         batch_ids = batch_ids.to(self.device)
-        self.model.train()
-        losses = self.model(counts, batch_ids)
+        self.vae.train()
+        losses = self.vae(counts, batch_ids)
         loss, recon_loss, kl_div_z, kl_div_b = losses
         assert torch.isnan(loss).item() is False
         tensorboard_logs = {
@@ -467,39 +382,27 @@ class LightningBatchLinearVAE(LightningVAE):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        encode_params = self.model.encoder.parameters()
-        decode_params = self.model.decoder.parameters()
+        encode_params = self.vae.encoder.parameters()
+        decode_params = self.vae.decoder.parameters()
         opt_g = torch.optim.Adam(
             list(encode_params) + list(decode_params),
-            lr=self.hparams.learning_rate)
+            lr=self.hparams['learning_rate'])
         opt_b = torch.optim.Adam(
-            list(self.model.beta.parameters()) + [self.model.batch_logvars],
-            lr=self.hparams.learning_rate)
-        if self.hparams.scheduler == 'cosine_warm':
+            list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
+            lr=self.hparams['learning_rate'])
+        if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
-        elif self.hparams.scheduler == 'cosine':
+        elif self.hparams['scheduler'] == 'cosine':
             scheduler = CosineAnnealingLR(
-                opt_g, T_max=self.hparams.steps_per_batch * 10)
-        elif self.hparams.scheduler == 'steplr':
-            m = 1e-1  # maximum learning rate
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = self.hparams.epochs // steps
-            scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'inv_steplr':
-            m = 1e-1  # maximum learning rate
-            opt_g = torch.optim.Adam(
-                self.model.parameters(), lr=m)
-            steps = int(np.log2(m / self.hparams.learning_rate))
-            steps = self.hparams.epochs // steps
-            scheduler = StepLR(opt_g, step_size=steps, gamma=0.5)
-        elif self.hparams.scheduler == 'none':
+                opt_g, T_max=10)
+        elif self.hparams['scheduler'] == 'none':
             return [opt_g, opt_b]
         else:
             raise ValueError(
-                f'Scheduler {self.hparams.scheduler} not defined.')
+                f'Scheduler {self.scheduler} not defined.')
         scheduler_b = CosineAnnealingLR(
-            opt_b, T_max=self.hparams.steps_per_batch)
+            opt_b, T_max=10)
         return [opt_g, opt_b], [scheduler, scheduler_b]
 
     def validation_step(self, batch, batch_idx):
@@ -507,7 +410,7 @@ class LightningBatchLinearVAE(LightningVAE):
             counts, batch_ids = batch
             counts = counts.to(self.device)
             batch_ids = batch_ids.to(self.device)
-            losses = self.model(counts, batch_ids)
+            losses = self.vae(counts, batch_ids)
             loss, rec_err, kl_div_z, kl_div_b = losses
             assert torch.isnan(loss).item() is False
             # Record the actual loss.
@@ -535,10 +438,10 @@ class LightningBatchLinearVAE(LightningVAE):
             tensorboard_logs[m] = rec_err
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
-            ms = metric_subspace(self.model, self.gt_eigvectors, self.gt_eigs)
-            ma = metric_alignment(self.model, self.gt_eigvectors)
-            mp = metric_procrustes(self.model, self.gt_eigvectors)
-            mr = metric_pairwise(self.model, self.gt_eigvectors, self.gt_eigs)
+            ms = metric_subspace(self.vae, self.gt_eigvectors, self.gt_eigs)
+            ma = metric_alignment(self.vae, self.gt_eigvectors)
+            mp = metric_procrustes(self.vae, self.gt_eigvectors)
+            mr = metric_pairwise(self.vae, self.gt_eigvectors, self.gt_eigs)
             tlog = {'subspace_distance': ms, 'alignment': ma, 'procrustes': mp}
             self.logger.experiment.add_scalar(
                 'procrustes', mp, self.global_step)
@@ -554,7 +457,7 @@ class LightningBatchLinearVAE(LightningVAE):
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
-        parser = LightningVAE.add_model_specific_args(parent_parser)
+        parser = MultVAE.add_model_specific_args(parent_parser)
         parser.add_argument(
             '--sample-metadata', help='Sample metadata file', required=False)
         parser.add_argument(
@@ -566,5 +469,4 @@ class LightningBatchLinearVAE(LightningVAE):
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=False, type=str, default=None)
-
         return parser

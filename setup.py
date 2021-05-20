@@ -24,7 +24,7 @@ description = ('Categorical Variational Autoencoders.')
 
 
 setup(name='catvae',
-      version='0.0.1',
+      version='0.0.2',
       license='BSD-3-Clause',
       description=description,
       author_email="jamietmorton@gmail.com",

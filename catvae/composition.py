@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.sparse import mm
-from gneiss.util import match_tips
 from gneiss.balances import sparse_balance_basis
 from skbio import TreeNode
 
@@ -53,11 +52,10 @@ def ilr_inv(eta, basis):
     return torch.nn.Softmax(eta @ basis, dim=-1)
 
 
-def ilr_basis(nwk, table):
+def ilr_basis(nwk):
     tree = TreeNode.read(nwk)
     t = tree.copy()
     t.bifurcate()
-    table, t = match_tips(table, t)
     basis = sparse_balance_basis(tree)[0]
     return basis
 
