@@ -459,14 +459,47 @@ class MultBatchVAE(MultVAE):
     def add_model_specific_args(parent_parser, add_help=True):
         parser = MultVAE.add_model_specific_args(parent_parser)
         parser.add_argument(
-            '--sample-metadata', help='Sample metadata file', required=False)
-        parser.add_argument(
-            '--batch-category',
-            help='Sample metadata column for batch effects.',
-            required=False, type=str, default=None)
-        parser.add_argument(
             '--batch-prior',
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
-            required=False, type=str, default=None)
+            required=True, type=str, default=None)
         return parser
+
+
+def add_data_specific_args(parent_parser, add_help=True):
+    parser = MultVAE.add_model_specific_args(parent_parser)
+    # Arguments specific for dataloaders
+    parser.add_argument(
+        '--train-biom', help='Training biom file', required=True)
+    parser.add_argument(
+        '--test-biom', help='Testing biom file', required=True)
+    parser.add_argument(
+        '--val-biom', help='Validation biom file', required=True)
+    parser.add_argument(
+        '--sample-metadata', help='Sample metadata file', required=False)
+    parser.add_argument(
+        '--batch-category',
+        help='Sample metadata column for batch effects.',
+        required=False, type=str, default=None)
+    parser.add_argument(
+        '--batch-size', help='Training batch size',
+        required=False, type=int, default=32)
+    # Arguments specific for trainer
+    parser.add_argument(
+        '--epochs', help='Training batch size',
+        required=False, type=int, default=100)
+    parser.add_argument('--num-workers', type=int)
+    parser.add_argument('--gpus', type=int)
+    parser.add_argument('--profile', type=bool, default=False)
+    parser.add_argument('--grad-clip', type=int, default=10)
+    parser.add_argument('--eigvalues', type=str, default=None,
+                        help='Ground truth eigenvalues (optional)',
+                        required=False)
+    parser.add_argument('--eigvectors', type=str, default=None,
+                        help='Ground truth eigenvectors (optional)',
+                        required=False)
+    parser.add_argument('--load-from-checkpoint', type=str, default=None)
+
+    parser.add_argument('--output-directory', type=str, default=None)
+
+    return parser
