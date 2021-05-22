@@ -280,12 +280,6 @@ class MultVAE(pl.LightningModule):
             help=('Learning rate scheduler '
                   '(choices include `cosine` and `steplr`'),
             default='cosine', required=False, type=str)
-        parser.add_argument(
-            '--epochs', help='Training batch size',
-            required=False, type=int, default=10)
-        parser.add_argument(
-            '-o', '--output-directory',
-            help='Output directory of model results', required=True)
         return parser
 
 
@@ -457,7 +451,7 @@ class MultBatchVAE(MultVAE):
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
-        parser = MultVAE.add_model_specific_args(parent_parser)
+        parser = MultVAE.add_model_specific_args(parent_parser, add_help=add_help)
         parser.add_argument(
             '--batch-prior',
             help=('Pre-learned batch effect priors'
@@ -467,7 +461,8 @@ class MultBatchVAE(MultVAE):
 
 
 def add_data_specific_args(parent_parser, add_help=True):
-    parser = MultVAE.add_model_specific_args(parent_parser)
+    parser = argparse.ArgumentParser(parents=[parent_parser],
+                                     add_help=add_help)
     # Arguments specific for dataloaders
     parser.add_argument(
         '--train-biom', help='Training biom file', required=True)

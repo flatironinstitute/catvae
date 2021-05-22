@@ -2,7 +2,7 @@ import os
 import argparse
 import numpy as np
 import torch
-from catvae.trainer import MultBatchVAE
+from catvae.trainer import MultBatchVAE, add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
@@ -62,13 +62,13 @@ def main(args):
     )
     trainer.checkpoint_callback = checkpoint_callback
     trainer.fit(model, dm)
-    torch.save(model.state_dict(),]
+    torch.save(model.state_dict(),
                args.output_directory + '/last_ckpt.pt')
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(add_help=False)
-    parser = MultBatchVAE.add_model_specific_args(parser)
-    parser = add_data_specific_args(parser)
+    parser = argparse.ArgumentParser(add_help=True)
+    parser = MultBatchVAE.add_model_specific_args(parser, add_help=False)
+    parser = add_data_specific_args(parser, add_help=False)
     args = parser.parse_args()
     main(args)

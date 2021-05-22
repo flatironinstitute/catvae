@@ -65,8 +65,8 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(add_help=False)
-    parser = MultVAE.add_model_specific_args(parser)
-    parser = add_data_specific_args(parser)
+    parser = argparse.ArgumentParser(add_help=True)
+    parser = MultVAE.add_model_specific_args(parser, add_help=False)
+    parser = add_data_specific_args(parser, add_help=False)
     args = parser.parse_args()
     main(args)
