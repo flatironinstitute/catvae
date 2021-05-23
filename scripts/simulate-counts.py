@@ -3,6 +3,7 @@ import numpy as np
 from biom import Table
 from catvae.sim import multinomial_bioms, multinomial_batch_bioms
 from biom.util import biom_open
+import pandas as pd
 import os
 
 def save_bioms(args, sims):
@@ -41,12 +42,13 @@ def batch_main(args):
         k=args.latent_dim, D=args.input_dim,
         N=args.samples, M=args.depth, C=args.batches)
     save_bioms(args, sims)
-
-    md = pd.DataFrame({'batch_category': self.sims['batch_idx']},
+    Y = self.sims['Y']
+    samp_ids = list(map(str, range(Y.shape[0])))
+    md = pd.DataFrame({'batch_category': sims['batch_idx']},
                       index=samp_ids)
     md.index.name = 'sampleid'
     md.to_csv(f'{output_dir}/metadata.txt', sep='\t')
-    batch_priors = pd.Series(self.sims['alphaILR'])
+    batch_priors = pd.Series(sims['alphaILR'])
     batch_priors.to_csv(f'{output_dir}/batch_priors.txt', sep='\t')
 
 

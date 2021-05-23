@@ -10,15 +10,10 @@ from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
 import yaml
 
+
 def main(args):
     if args.load_from_checkpoint is not None:
         model = MultVAE.load_from_checkpoint(args.load_from_checkpoint)
-        # checkpoint = torch.load(
-        #     args.load_from_checkpoint,
-        #     map_location=lambda storage, loc: storage)
-        # print(checkpoint)
-        # print(checkpoint.keys())
-        # model.load_state_dict(checkpoint['state_dict'])
     else:
         n_input = load_table(args.val_biom).shape[0]
         model = MultVAE(n_input,
@@ -83,7 +78,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=True)
     parser = MultVAE.add_model_specific_args(parser, add_help=False)
     parser = add_data_specific_args(parser, add_help=False)
-
     args = parser.parse_args()
     main(args)
 

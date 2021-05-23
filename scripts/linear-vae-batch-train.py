@@ -6,26 +6,29 @@ from catvae.trainer import MultBatchVAE, BiomDataModule, add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
+from biom import load_table
+import yaml
 
 
 def main(args):
-    model = MultBatchVAE(n_input,
-                         n_latent=args.n_latent,
-                         n_hidden=args.n_hidden,
-                         basis=args.basis,
-                         dropout=args.dropout,
-                         bias=args.bias,
-                         batch_norm=args.batch_norm,
-                         batch_prior=args.batch_prior,
-                         encoder_depth=args.encoder_depth,
-                         learning_rate=args.learning_rate,
-                         scheduler=args.scheduler,
-                         transform=args.transform)
     if args.load_from_checkpoint is not None:
-        checkpoint = torch.load(
-            args.load_from_checkpoint,
-            map_location=lambda storage, loc: storage)
-        model.load_state_dict(checkpoint['state_dict'])
+        model = MultBatchVAE.load_from_checkpoint(args.load_from_checkpoint)
+    else:
+        n_input = load_table(args.val_biom).shape[0]
+        model = MultBatchVAE(
+            n_input,
+            args.batch_prior,
+            n_latent=args.n_latent,
+            n_hidden=args.n_hidden,
+            basis=args.basis,
+            dropout=args.dropout,
+            bias=args.bias,
+            batch_norm=args.batch_norm,
+            encoder_depth=args.encoder_depth,
+            learning_rate=args.learning_rate,
+            scheduler=args.scheduler,
+            transform=args.transform)
+
     print(args)
     print(model)
     if args.eigvectors is not None and args.eigvalues is not None:
@@ -63,12 +66,12 @@ def main(args):
         gradient_clip_val=args.grad_clip,
         accumulate_grad_batches=args.grad_accum,
         profiler=profiler,
-        logger=tb_logger
+        logger=tb_logger,
         callbacks=[checkpoint_callback])
 
     trainer.fit(model, dm)
-    torch.save(model.state_dict(),
-               args.output_directory + '/last_ckpt.pt')
+    trainer.save_checkpoint(
+        args.output_directory + '/last_ckpt.pt')
 
 
 if __name__ == '__main__':
