@@ -23,6 +23,7 @@ import pandas as pd
 from scipy.sparse import coo_matrix
 import numpy as np
 import os
+import yaml
 
 
 class BiomDataModule(pl.LightningDataModule):
@@ -83,7 +84,7 @@ class BiomDataModule(pl.LightningDataModule):
 
 
 class MultVAE(pl.LightningModule):
-    def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
+    def __init__(self, n_input=10, n_latent=32, n_hidden=64, basis=None,
                  dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount'):
@@ -494,7 +495,34 @@ def add_data_specific_args(parent_parser, add_help=True):
                         help='Ground truth eigenvectors (optional)',
                         required=False)
     parser.add_argument('--load-from-checkpoint', type=str, default=None)
-
     parser.add_argument('--output-directory', type=str, default=None)
-
     return parser
+
+
+def add_arguments_from_yaml(yaml_file, parent_parser, add_help=True):
+    # this has been inspired by
+    # https://gist.github.com/multun/ccf5a8b855de7c50968aac127bc5605b
+    params = yaml.load(yaml_file)
+    parser = argparse.ArgumentParser(
+        parents=[parent_parser],
+        # Don't mess with format of description
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=add_help,
+        **params,
+    )
+    for opt_args, opt_kwargs in self.options:
+        parser_arg = parser.add_argument(*opt_args, **opt_kwargs)
+        if parser_arg.dest in config_vars:
+            config_default = config_vars.pop(parser_arg.dest)
+            expected_type = str
+            if parser_arg.type is not None:
+                expected_type = parser_arg.type
+
+            if not isinstance(config_default, expected_type):
+                parser.error('YAML configuration entry {} '
+                             'does not have type {}'.format(
+                                 parser_arg.dest,
+                                 expected_type))
+            parser_arg.default = config_default
+    return parser
+

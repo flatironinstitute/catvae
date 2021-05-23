@@ -2,7 +2,7 @@ import os
 import argparse
 import numpy as np
 import torch
-from catvae.trainer import MultBatchVAE, add_data_specific_args
+from catvae.trainer import MultBatchVAE, BiomDataModule, add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
@@ -37,30 +37,35 @@ def main(args):
     else:
         profiler = None
     dm = BiomDataModule(
-        args.train_biom, args.test_biom, args.valid_biom,
+        args.train_biom, args.test_biom, args.val_biom,
         metadata=args.sample_metadata, batch_category=args.batch_category,
         batch_size=args.batch_size, num_workers=args.num_workers)
+
+    ckpt_path = os.path.join(
+        args.output_directory,
+        trainer.logger.name,
+        f"catvae_version_{trainer.logger.version}",
+        "checkpoints")
+    checkpoint_callback = ModelCheckpoint(
+        filepath=ckpt_path,
+        period=1,
+        monitor='val_loss',
+        mode='min',
+        verbose=True)
+
+    os.mkdir(args.output_directory)
+    tb_logger = pl_loggers.TensorBoardLogger(f'{args.output_directory}/logs/')
+
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
         check_val_every_n_epoch=1,
         gradient_clip_val=args.grad_clip,
         accumulate_grad_batches=args.grad_accum,
-        profiler=profiler)
-    ckpt_path = os.path.join(
-        args.output_directory,
-        trainer.logger.name,
-        f"catvae_version_{trainer.logger.version}",
-        "checkpoints",
-    )
-    checkpoint_callback = ModelCheckpoint(
-        filepath=ckpt_path,
-        period=1,
-        monitor='val_loss',
-        mode='min',
-        verbose=True
-    )
-    trainer.checkpoint_callback = checkpoint_callback
+        profiler=profiler,
+        logger=tb_logger
+        callbacks=[checkpoint_callback])
+
     trainer.fit(model, dm)
     torch.save(model.state_dict(),
                args.output_directory + '/last_ckpt.pt')
