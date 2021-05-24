@@ -23,7 +23,6 @@ import pandas as pd
 from scipy.sparse import coo_matrix
 import numpy as np
 import os
-import yaml
 
 
 class BiomDataModule(pl.LightningDataModule):

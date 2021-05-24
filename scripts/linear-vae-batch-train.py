@@ -2,14 +2,12 @@ import os
 import argparse
 import numpy as np
 import pandas as pd
-import torch
 from catvae.trainer import MultBatchVAE, BiomDataModule, add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
-import yaml
 
 
 def main(args):
