@@ -1,11 +1,13 @@
 import os
 import argparse
 import numpy as np
+import pandas as pd
 import torch
 from catvae.trainer import MultBatchVAE, BiomDataModule, add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
+from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
 import yaml
 
@@ -14,10 +16,16 @@ def main(args):
     if args.load_from_checkpoint is not None:
         model = MultBatchVAE.load_from_checkpoint(args.load_from_checkpoint)
     else:
-        n_input = load_table(args.val_biom).shape[0]
+        table = load_table(args.train_biom)
+        n_input = table.shape[0]
+        sample_metadata = pd.read_table(args.sample_metadata, dtype=str)
+        sample_metadata = sample_metadata.set_index(sample_metadata.columns[0])
+        sample_metadata = sample_metadata.loc[table.ids()]
+        n_batches = len(sample_metadata[args.batch_category].value_counts())
         model = MultBatchVAE(
             n_input,
             args.batch_prior,
+            n_batches,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
             basis=args.basis,
@@ -46,11 +54,9 @@ def main(args):
 
     ckpt_path = os.path.join(
         args.output_directory,
-        trainer.logger.name,
-        f"catvae_version_{trainer.logger.version}",
         "checkpoints")
     checkpoint_callback = ModelCheckpoint(
-        filepath=ckpt_path,
+        dirpath=ckpt_path,
         period=1,
         monitor='val_loss',
         mode='min',
@@ -64,7 +70,6 @@ def main(args):
         gpus=args.gpus,
         check_val_every_n_epoch=1,
         gradient_clip_val=args.grad_clip,
-        accumulate_grad_batches=args.grad_accum,
         profiler=profiler,
         logger=tb_logger,
         callbacks=[checkpoint_callback])

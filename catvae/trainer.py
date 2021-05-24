@@ -286,8 +286,9 @@ class MultVAE(pl.LightningModule):
 
 # Batch correction methods
 class MultBatchVAE(MultVAE):
-    def __init__(self, n_input, batch_prior, n_latent=32, n_hidden=64,
-                 basis=None, dropout=0.5, bias=True, batch_norm=False,
+    def __init__(self, n_input, batch_prior, n_batches,
+                 n_latent=32, n_hidden=64, basis=None,
+                 dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount'):
         super().__init__(n_input, n_latent, n_hidden, basis,

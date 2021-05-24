@@ -56,7 +56,7 @@
 simulate-counts.py \
     --latent-dim 10 \
     --input-dim 50 \
-    --samples 300 \
+    --samples 500 \
     --depth 10000 \
     --batch-effect \
     --batches 3 \
@@ -76,11 +76,35 @@ linear-vae-batch-train.py \
     --scheduler cosine \
     --batch-category batch_category \
     --sample-metadata simulation_directory/metadata.txt \
-    --batch-prior simulation_directory/batch-priors.txt \
+    --batch-prior simulation_directory/batch_priors.txt \
     --train-biom simulation_directory/train.biom \
     --test-biom simulation_directory/test.biom \
     --val-biom simulation_directory/valid.biom \
-    --epochs 50 \
+    --epochs 3 \
+    --num-workers 1 \
+    --gpus 0 \
+    --output-directory vae_results
+
+linear-vae-batch-train.py \
+    --load-from-checkpoint vae_results/last_ckpt.pt \
+    --basis tree.nwk \
+    --n-latent 10 \
+    --n-hidden 10 \
+    --dropout 0.5 \
+    --no-bias \
+    --no-batch-norm \
+    --batch-size 50 \
+    --encoder-depth 1 \
+    --learning-rate 1e-1 \
+    --transform pseudocount \
+    --scheduler cosine \
+    --batch-category batch_category \
+    --sample-metadata simulation_directory/metadata.txt \
+    --batch-prior simulation_directory/batch_priors.txt \
+    --train-biom simulation_directory/train.biom \
+    --test-biom simulation_directory/test.biom \
+    --val-biom simulation_directory/valid.biom \
+    --epochs 3 \
     --num-workers 1 \
     --gpus 0 \
     --output-directory vae_results_2

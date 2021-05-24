@@ -45,7 +45,6 @@ def main(args):
 
     ckpt_path = os.path.join(
         args.output_directory,
-        f"linear_vae_version",
         "checkpoints")
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_path,

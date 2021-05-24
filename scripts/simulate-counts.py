@@ -42,14 +42,14 @@ def batch_main(args):
         k=args.latent_dim, D=args.input_dim,
         N=args.samples, M=args.depth, C=args.batches)
     save_bioms(args, sims)
-    Y = self.sims['Y']
+    Y = sims['Y']
     samp_ids = list(map(str, range(Y.shape[0])))
     md = pd.DataFrame({'batch_category': sims['batch_idx']},
                       index=samp_ids)
     md.index.name = 'sampleid'
-    md.to_csv(f'{output_dir}/metadata.txt', sep='\t')
+    md.to_csv(f'{args.output_dir}/metadata.txt', sep='\t')
     batch_priors = pd.Series(sims['alphaILR'])
-    batch_priors.to_csv(f'{output_dir}/batch_priors.txt', sep='\t')
+    batch_priors.to_csv(f'{args.output_dir}/batch_priors.txt', sep='\t')
 
 
 if __name__ == '__main__':
