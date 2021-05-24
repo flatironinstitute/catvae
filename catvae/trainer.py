@@ -501,15 +501,3 @@ def add_data_specific_args(parent_parser, add_help=True):
     return parser
 
 
-def add_arguments_from_yaml(yaml_file, parent_parser, add_help=True):
-    # this has been inspired by
-    # https://gist.github.com/multun/ccf5a8b855de7c50968aac127bc5605b
-    params = yaml.load(yaml_file)
-    parser = argparse.ArgumentParser(
-        parents=[parent_parser],
-        # Don't mess with format of description
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        add_help=add_help,
-        **params,
-    )
-    return parser
