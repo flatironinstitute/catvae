@@ -280,21 +280,16 @@ class MultVAE(pl.LightningModule):
             help=('Learning rate scheduler '
                   '(choices include `cosine` and `steplr`'),
             default='cosine', required=False, type=str)
-        parser.add_argument(
-            '--epochs', help='Training batch size',
-            required=False, type=int, default=10)
-        parser.add_argument(
-            '-o', '--output-directory',
-            help='Output directory of model results', required=True)
         return parser
 
 
 # Batch correction methods
 class MultBatchVAE(MultVAE):
-    def __init__(self, n_input, n_latent, n_hidden, n_batches, basis,
-                 dropout, bias, batch_norm, batch_prior,
-                 encoder_depth, learning_rate, scheduler,
-                 transform):
+    def __init__(self, n_input, batch_prior, n_batches,
+                 n_latent=32, n_hidden=64, basis=None,
+                 dropout=0.5, bias=True, batch_norm=False,
+                 encoder_depth=1, learning_rate=0.001, scheduler='cosine',
+                 transform='pseudocount'):
         super().__init__(n_input, n_latent, n_hidden, basis,
                          dropout, bias, batch_norm,
                          encoder_depth, learning_rate, scheduler,
@@ -457,16 +452,49 @@ class MultBatchVAE(MultVAE):
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
-        parser = MultVAE.add_model_specific_args(parent_parser)
-        parser.add_argument(
-            '--sample-metadata', help='Sample metadata file', required=False)
-        parser.add_argument(
-            '--batch-category',
-            help='Sample metadata column for batch effects.',
-            required=False, type=str, default=None)
+        parser = MultVAE.add_model_specific_args(
+            parent_parser, add_help=add_help)
         parser.add_argument(
             '--batch-prior',
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
-            required=False, type=str, default=None)
+            required=True, type=str, default=None)
         return parser
+
+
+def add_data_specific_args(parent_parser, add_help=True):
+    parser = argparse.ArgumentParser(parents=[parent_parser],
+                                     add_help=add_help)
+    # Arguments specific for dataloaders
+    parser.add_argument(
+        '--train-biom', help='Training biom file', required=True)
+    parser.add_argument(
+        '--test-biom', help='Testing biom file', required=True)
+    parser.add_argument(
+        '--val-biom', help='Validation biom file', required=True)
+    parser.add_argument(
+        '--sample-metadata', help='Sample metadata file', required=False)
+    parser.add_argument(
+        '--batch-category',
+        help='Sample metadata column for batch effects.',
+        required=False, type=str, default=None)
+    parser.add_argument(
+        '--batch-size', help='Training batch size',
+        required=False, type=int, default=32)
+    # Arguments specific for trainer
+    parser.add_argument(
+        '--epochs', help='Training batch size',
+        required=False, type=int, default=100)
+    parser.add_argument('--num-workers', type=int)
+    parser.add_argument('--gpus', type=int)
+    parser.add_argument('--profile', type=bool, default=False)
+    parser.add_argument('--grad-clip', type=int, default=10)
+    parser.add_argument('--eigvalues', type=str, default=None,
+                        help='Ground truth eigenvalues (optional)',
+                        required=False)
+    parser.add_argument('--eigvectors', type=str, default=None,
+                        help='Ground truth eigenvectors (optional)',
+                        required=False)
+    parser.add_argument('--load-from-checkpoint', type=str, default=None)
+    parser.add_argument('--output-directory', type=str, default=None)
+    return parser
