@@ -499,5 +499,3 @@ def add_data_specific_args(parent_parser, add_help=True):
     parser.add_argument('--load-from-checkpoint', type=str, default=None)
     parser.add_argument('--output-directory', type=str, default=None)
     return parser
-
-
