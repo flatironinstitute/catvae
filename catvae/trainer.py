@@ -453,7 +453,8 @@ class MultBatchVAE(MultVAE):
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
-        parser = MultVAE.add_model_specific_args(parent_parser, add_help=add_help)
+        parser = MultVAE.add_model_specific_args(
+            parent_parser, add_help=add_help)
         parser.add_argument(
             '--batch-prior',
             help=('Pre-learned batch effect priors'
@@ -511,19 +512,4 @@ def add_arguments_from_yaml(yaml_file, parent_parser, add_help=True):
         add_help=add_help,
         **params,
     )
-    for opt_args, opt_kwargs in self.options:
-        parser_arg = parser.add_argument(*opt_args, **opt_kwargs)
-        if parser_arg.dest in config_vars:
-            config_default = config_vars.pop(parser_arg.dest)
-            expected_type = str
-            if parser_arg.type is not None:
-                expected_type = parser_arg.type
-
-            if not isinstance(config_default, expected_type):
-                parser.error('YAML configuration entry {} '
-                             'does not have type {}'.format(
-                                 parser_arg.dest,
-                                 expected_type))
-            parser_arg.default = config_default
     return parser
-
