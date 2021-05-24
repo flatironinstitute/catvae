@@ -6,6 +6,7 @@ from biom.util import biom_open
 import pandas as pd
 import os
 
+
 def save_bioms(args, sims):
     output_dir = args.output_dir
     Y = sims['Y']

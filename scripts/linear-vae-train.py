@@ -7,6 +7,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
+import yaml
 
 
 def main(args):
@@ -77,4 +78,3 @@ if __name__ == '__main__':
     parser = add_data_specific_args(parser, add_help=False)
     args = parser.parse_args()
     main(args)
-

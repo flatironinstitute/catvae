@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
+import yaml
 
 
 def main(args):
@@ -62,6 +63,9 @@ def main(args):
 
     os.mkdir(args.output_directory)
     tb_logger = pl_loggers.TensorBoardLogger(f'{args.output_directory}/logs/')
+    # save hyper-parameters to yaml file
+    with open(f'{args.output_directory}/hparams.yaml', 'w') as outfile:
+        yaml.dump(model._hparams, outfile, default_flow_style=False)
 
     trainer = Trainer(
         max_epochs=args.epochs,
