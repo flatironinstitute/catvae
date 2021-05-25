@@ -10,7 +10,7 @@ from catvae.dataset.biom import (
     BiomDataset, TripletDataset,
     collate_single_f, collate_triplet_f,
     collate_batch_f)
-from catvae.models import LinearVAE, LinearBatchVAE
+from catvae.models import LinearVAE, LinearBatchVAE, TripletNet
 from catvae.composition import (alr_basis, ilr_basis, identity_basis)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
@@ -97,7 +97,6 @@ class TripletDataModule(pl.LightningDataModule):
         index_name = self.metadata.columns[0]
         self.metadata = self.metadata.set_index(index_name)
         self.collate_f = collate_triplet_f
-
 
     def train_dataloader(self):
         train_dataset = TripletDataset(
@@ -556,21 +555,15 @@ class TripletVAE(pl.LightningDataModule):
         i_counts = i_counts.to(self.device)
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
-        # VAE loss
-        losses = self.vae(counts, batch_ids)
-        vae_loss, recon_loss, kl_div_z, kl_div_b = losses
         assert torch.isnan(loss).item() is False
         pos_u = self.vae.encode_marginalized(i_counts, i_batch)
         pos_v = self.vae.encode_marginalized(j_counts, j_batch)
         neg_v = self.vae.encode_marginalized(k_counts, k_batch)
         # Triplet loss
-        triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
-        loss = vae_loss + triplet_loss
+        loss = self.triplet_net(pos_u, pos_v, neg_v)
         tensorboard_logs = {
             'lr': current_lr,
-            'train/total_loss': loss,
-            'train/vae_loss': vae_loss,
-            'train/triplet_loss': triplet_loss
+            'train_loss': loss
         }
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
