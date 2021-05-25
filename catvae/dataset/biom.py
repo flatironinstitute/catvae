@@ -162,7 +162,6 @@ class TripletDataset(BiomDataset):
         k_counts : np.array
             OTU counts for negative sample
         """
-        batch_indices = self.batch_indices[i]
         b = self.metadata.iloc[i][self.batch_category]
         batch_group = self.batch_dict[b]
         i, j, k = _get_triplet(batch_group, self.class_category)

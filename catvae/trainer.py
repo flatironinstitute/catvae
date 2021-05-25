@@ -555,7 +555,6 @@ class TripletVAE(pl.LightningDataModule):
         i_counts = i_counts.to(self.device)
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
-        assert torch.isnan(loss).item() is False
         pos_u = self.vae.encode_marginalized(i_counts, i_batch)
         pos_v = self.vae.encode_marginalized(j_counts, j_batch)
         neg_v = self.vae.encode_marginalized(k_counts, k_batch)
@@ -595,24 +594,20 @@ class TripletVAE(pl.LightningDataModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             i_counts, j_counts, k_counts = batch
+            i_batch = self.bcm.predict_proba(i_counts)
+            j_batch = self.bcm.predict_proba(j_counts)
+            k_batch = self.bcm.predict_proba(k_counts)
             i_counts = i_counts.to(self.device)
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
 
-            losses = self.vae(counts, batch_ids)
-            vae_loss, recon_loss, kl_div_z, kl_div_b = losses
-            assert torch.isnan(loss).item() is False
             pos_u = self.vae.encode_marginalized(i_counts, i_batch)
             pos_v = self.vae.encode_marginalized(j_counts, j_batch)
             neg_v = self.vae.encode_marginalized(k_counts, k_batch)
             # Triplet loss
-            triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
-            loss = vae_loss + triplet_loss
+            loss = self.triplet_net(pos_u, pos_v, neg_v)
             tensorboard_logs = {
-                'lr': current_lr,
-                'val/total_loss': loss,
-                'val/vae_loss': vae_loss,
-                'val/triplet_loss': triplet_loss
+                'val_loss': loss
             }
 
             # log the learning rate
