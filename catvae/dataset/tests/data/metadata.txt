@@ -5,11 +5,11 @@ sample2	2	0	0	0
 sample3	3	0	1	0
 sample4	4	0	0	0
 sample5	0	1	1	0
-sample6	1	1	0	0
-sample7	2	1	1	0
-sample8	3	1	0	0
-sample9	4	1	1	0
-sample10	0	2	0	0
+sample6	1	1	0	1
+sample7	2	1	1	1
+sample8	3	1	0	1
+sample9	4	1	1	1
+sample10	0	2	0	1
 sample11	1	2	1	1
 sample12	2	2	0	1
 sample13	3	2	1	1

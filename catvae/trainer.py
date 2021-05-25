@@ -5,12 +5,10 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts,
-    CosineAnnealingLR
-)
+    CosineAnnealingLR)
 from catvae.dataset.biom import (
     collate_single_f, BiomDataset,
-    collate_batch_f
-)
+    collate_batch_f)
 from catvae.models import LinearVAE, LinearBatchVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis)
 from catvae.metrics import (
