@@ -7,7 +7,8 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts,
     CosineAnnealingLR)
 from catvae.dataset.biom import (
-    collate_single_f, BiomDataset,
+    BiomDataset, TripletDataset,
+    collate_single_f, collate_triplet_f,
     collate_batch_f)
 from catvae.models import LinearVAE, LinearBatchVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis)
@@ -72,6 +73,64 @@ class BiomDataModule(pl.LightningDataModule):
         test_dataset = BiomDataset(
             load_table(self.test_biom),
             metadata=self.metadata, batch_category=self.batch_category)
+        test_dataloader = DataLoader(
+            test_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f,
+            shuffle=False, num_workers=self.num_workers,
+            drop_last=True, pin_memory=True)
+        return test_dataloader
+
+
+class TripletDataModule(pl.LightningDataModule):
+    def __init__(self, train_biom, test_biom, valid_biom,
+                 metadata, batch_category, class_category,
+                 batch_size=10, num_workers=1):
+        super().__init__()
+        self.train_biom = train_biom
+        self.test_biom = test_biom
+        self.val_biom = valid_biom
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+        self.metadata = pd.read_table(
+            metadata, dtype=str)
+        index_name = self.metadata.columns[0]
+        self.metadata = self.metadata.set_index(index_name)
+        self.collate_f = collate_triplet_f
+
+
+    def train_dataloader(self):
+        train_dataset = TripletDataset(
+            load_table(self.train_biom),
+            metadata=self.metadata,
+            batch_category=self.batch_category,
+            class_category=self.class_category)
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f, shuffle=True,
+            num_workers=self.num_workers, drop_last=True,
+            pin_memory=True)
+        return train_dataloader
+
+    def val_dataloader(self):
+        val_dataset = BiomDataset(
+            load_table(self.val_biom),
+            metadata=self.metadata,
+            batch_category=self.batch_category,
+            class_category=self.class_category)
+        val_dataloader = DataLoader(
+            val_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f, shuffle=False,
+            num_workers=self.num_workers, drop_last=True,
+            pin_memory=True)
+        return val_dataloader
+
+    def test_dataloader(self):
+        test_dataset = BiomDataset(
+            load_table(self.test_biom),
+            metadata=self.metadata,
+            batch_category=self.batch_category,
+            class_category=self.class_category)
         test_dataloader = DataLoader(
             test_dataset, batch_size=self.batch_size,
             collate_fn=self.collate_f,
@@ -458,6 +517,127 @@ class MultBatchVAE(MultVAE):
                   '(must have same number of dimensions as `train-biom`)'),
             required=True, type=str, default=None)
         return parser
+
+
+class TripletVAE(pl.LightningDataModule):
+    def __init__(self, vae_model, batch_model, n_input=32, n_hidden=64,
+                 dropout=0.5, bias=True, batch_norm=False,
+                 learning_rate=0.001, vae_learning_rate=1e-5,
+                 scheduler='cosine'):
+        super().__init__()
+        self.vae = vae_model
+        self.bcm = batch_model
+        self.triplet_net = TripletNet(n_input, n_hidden)
+        self._hparams = {
+            'n_input': n_input,
+            'n_hidden': n_hidden,
+            'learning_rate': learning_rate,
+            'vae_learning_rate': vae_learning_rate,
+            'scheduler': scheduler
+        }
+
+    def forward(self, x):
+        return self.triplet_net.encode(x)
+
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        self.vae.train()
+        self.triplet_net.train()
+
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams['learning_rate']
+
+        i_counts, j_counts, k_counts = batch
+        i_batch = self.bcm.predict_proba(i_counts)
+        j_batch = self.bcm.predict_proba(j_counts)
+        k_batch = self.bcm.predict_proba(k_counts)
+        i_counts = i_counts.to(self.device)
+        j_counts = j_counts.to(self.device)
+        k_counts = k_counts.to(self.device)
+        # VAE loss
+        losses = self.vae(counts, batch_ids)
+        vae_loss, recon_loss, kl_div_z, kl_div_b = losses
+        assert torch.isnan(loss).item() is False
+        pos_u = self.vae.encode_marginalized(i_counts, i_batch)
+        pos_v = self.vae.encode_marginalized(j_counts, j_batch)
+        neg_v = self.vae.encode_marginalized(k_counts, k_batch)
+        # Triplet loss
+        triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
+        loss = vae_loss + triplet_loss
+        tensorboard_logs = {
+            'lr': current_lr,
+            'train/total_loss': loss,
+            'train/vae_loss': vae_loss,
+            'train/triplet_loss': triplet_loss
+        }
+        # log the learning rate
+        return {'loss': loss, 'log': tensorboard_logs}
+
+    def configure_optimizers(self):
+        encode_params = self.vae.encoder.parameters()
+        decode_params = self.vae.decoder.parameters()
+        opt_g = torch.optim.Adam(
+            list(encode_params) + list(decode_params),
+            lr=self.hparams['learning_rate'])
+        opt_b = torch.optim.Adam(
+            list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
+            lr=self.hparams['learning_rate'])
+        if self.hparams['scheduler'] == 'cosine_warm':
+            scheduler = CosineAnnealingWarmRestarts(
+                opt_g, T_0=2, T_mult=2)
+        elif self.hparams['scheduler'] == 'cosine':
+            scheduler = CosineAnnealingLR(
+                opt_g, T_max=10)
+        elif self.hparams['scheduler'] == 'none':
+            return [opt_g, opt_b]
+        else:
+            raise ValueError(
+                f'Scheduler {self.scheduler} not defined.')
+        scheduler_b = CosineAnnealingLR(
+            opt_b, T_max=10)
+        return [opt_g, opt_b], [scheduler, scheduler_b]
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            i_counts, j_counts, k_counts = batch
+            i_counts = i_counts.to(self.device)
+            j_counts = j_counts.to(self.device)
+            k_counts = k_counts.to(self.device)
+
+            losses = self.vae(counts, batch_ids)
+            vae_loss, recon_loss, kl_div_z, kl_div_b = losses
+            assert torch.isnan(loss).item() is False
+            pos_u = self.vae.encode_marginalized(i_counts, i_batch)
+            pos_v = self.vae.encode_marginalized(j_counts, j_batch)
+            neg_v = self.vae.encode_marginalized(k_counts, k_batch)
+            # Triplet loss
+            triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
+            loss = vae_loss + triplet_loss
+            tensorboard_logs = {
+                'lr': current_lr,
+                'val/total_loss': loss,
+                'val/vae_loss': vae_loss,
+                'val/triplet_loss': triplet_loss
+            }
+
+            # log the learning rate
+            return {'val_loss': loss, 'log': tensorboard_logs}
+
+    def validation_epoch_end(self, outputs):
+        metrics = ['val/vae_loss',
+                   'val/triplet_loss',
+                   'val/total_loss']
+        tensorboard_logs = {}
+        for m in metrics:
+            loss_f = lambda x: x['log'][m]
+            losses = list(map(loss_f, outputs))
+            rec_err = sum(losses) / len(losses)
+            self.logger.experiment.add_scalar(
+                m, rec_err, self.global_step)
+            tensorboard_logs[m] = rec_err
+        return {'val_loss': rec_err, 'log': tensorboard_logs}
 
 
 def add_data_specific_args(parent_parser, add_help=True):
