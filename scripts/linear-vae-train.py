@@ -7,6 +7,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
+from skbio import TreeNode
 import yaml
 
 
