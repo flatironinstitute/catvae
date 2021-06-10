@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
+from skbio import TreeNode
 import yaml
 
 
@@ -66,6 +67,10 @@ def main(args):
     # save hyper-parameters to yaml file
     with open(f'{args.output_directory}/hparams.yaml', 'w') as outfile:
         yaml.dump(model._hparams, outfile, default_flow_style=False)
+    # save tree to file if specified
+    if os.path.exists(args.basis):
+        tree = TreeNode.read(args.basis)
+        tree.write(f'{args.output_directory}/tree.nwk')
 
     trainer = Trainer(
         max_epochs=args.epochs,
