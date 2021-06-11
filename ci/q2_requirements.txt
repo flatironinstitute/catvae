@@ -1,0 +1,10 @@
+pyyaml
+decorator
+tzlocal
+dill
+python-dateutil
+bibtexparser
+networkx
+https://github.com/qiime2/qiime2.git
+https://github.com/qiime2/q2-sample-classifier.git
+https://github.com/qiime2/q2-types.git

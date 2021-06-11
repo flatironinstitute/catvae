@@ -6,7 +6,7 @@ from catvae.trainer import MultVAE, BiomDataModule, add_data_specific_args
 from biom import load_table
 from skbio import TreeNode
 import yaml
-
+import pandas as pd
 
 # This is derived from the scvi notebook
 # https://github.com/YosefLab/scvi-tutorials/blob/master/linear_decoder.ipynb
@@ -14,6 +14,11 @@ import yaml
 # so use at your own risk
 def main(args):
     print(args)
+    # Need to hack in sample metadata
+    metadata = pd.read_table(args.sample_metadata, dtype=str)
+    index_name = metadata.columns[0]
+    metadata = metadata.set_index(index_name)
+
     train_biom = load_table(args.train_biom)
     test_biom = load_table(args.test_biom)
     valid_biom = load_table(args.val_biom)
@@ -21,11 +26,7 @@ def main(args):
     # so we'll just combined train/validate tables
     # this could give scvi a slight advantage, but whatev
     t = train_biom.merge(valid_biom)
-    # Need to hack in sample metadata
     D, _ = t.shape
-    metadata = pd.read_table(metadata, dtype=str)
-    index_name = metadata.columns[0]
-    metadata = metadata.set_index(index_name)
 
     obs_md = [{'taxonomy': 'None'} for v in range(D)]
     sample_md = [{'batch': np.asscalar(v)}

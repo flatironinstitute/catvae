@@ -41,6 +41,10 @@ setup(name='catvae',
           'scikit-bio',
           'tensorboard',
           'pytorch-lightning>=1.3.1'
+          # if utilizing the qiime2 API you also need a mininum of
+          # https://github.com/qiime2/qiime2.git
+          # https://github.com/qiime2/q2-sample-classifier.git
+          # https://github.com/qiime2/q2-types.git
       ],
       classifiers=classifiers,
       package_data={},

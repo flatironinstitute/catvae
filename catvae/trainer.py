@@ -530,7 +530,7 @@ class MultBatchVAE(MultVAE):
 class TripletVAE(pl.LightningDataModule):
     def __init__(self, vae_model, batch_model, n_input=32, n_hidden=64,
                  dropout=0.5, bias=True, batch_norm=False,
-                 learning_rate=0.001, vae_learning_rate=1e-5,
+                 learning_rate=0.001,
                  scheduler='cosine'):
         super().__init__()
         self.vae = vae_model
@@ -540,7 +540,7 @@ class TripletVAE(pl.LightningDataModule):
             'n_input': n_input,
             'n_hidden': n_hidden,
             'learning_rate': learning_rate,
-            'vae_learning_rate': vae_learning_rate,
+            # TODO: we should add VAE learning rate at some point.
             'scheduler': scheduler
         }
 
@@ -640,6 +640,41 @@ class TripletVAE(pl.LightningDataModule):
                 m, rec_err, self.global_step)
             tensorboard_logs[m] = rec_err
         return {'val_loss': rec_err, 'log': tensorboard_logs}
+
+    @staticmethod
+    def add_model_specific_args(parent_parser, add_help=True):
+        parser = argparse.ArgumentParser(parents=[parent_parser],
+                                         add_help=add_help)
+        parser.add_argument(
+            '--n-hidden', help='Encoder dimension.',
+            required=False, type=int, default=64)
+        parser.add_argument(
+            '--dropout', help='Dropout probability',
+            required=False, type=float, default=0.1)
+        parser.add_argument('--bias', dest='bias', action='store_true')
+        parser.add_argument('--no-bias', dest='bias', action='store_false')
+        parser.add_argument('--batch-norm', dest='batch_norm',
+                            action='store_true')
+        parser.add_argument('--no-batch-norm', dest='batch_norm',
+                            action='store_false')
+        parser.add_argument(
+            '--learning-rate', help='Learning rate',
+            required=False, type=float, default=1e-3)
+        parser.add_argument(
+            '--transform', help=('Specifies transform for preprocessing '
+                                 '(arcsine, pseudocount, clr)'),
+            required=False, type=str, default='pseudocount')
+        parser.add_argument(
+            '--distribution',
+            help=('Specifies decoder distribution, either '
+                  '`multinomial` or `gaussian`.'),
+            required=False, type=str, default='multinomial')
+        parser.add_argument(
+            '--scheduler',
+            help=('Learning rate scheduler '
+                  '(choices include `cosine` and `steplr`'),
+            default='cosine', required=False, type=str)
+        return parser
 
 
 def add_data_specific_args(parent_parser, add_help=True):
