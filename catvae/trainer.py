@@ -91,7 +91,8 @@ class TripletDataModule(pl.LightningDataModule):
         self.val_biom = valid_biom
         self.batch_size = batch_size
         self.num_workers = num_workers
-
+        self.batch_category = batch_category
+        self.class_category = class_category
         self.metadata = pd.read_table(
             metadata, dtype=str)
         index_name = self.metadata.columns[0]
@@ -112,7 +113,7 @@ class TripletDataModule(pl.LightningDataModule):
         return train_dataloader
 
     def val_dataloader(self):
-        val_dataset = BiomDataset(
+        val_dataset = TripletDataset(
             load_table(self.val_biom),
             metadata=self.metadata,
             batch_category=self.batch_category,
@@ -125,7 +126,7 @@ class TripletDataModule(pl.LightningDataModule):
         return val_dataloader
 
     def test_dataloader(self):
-        test_dataset = BiomDataset(
+        test_dataset = TripletDataset(
             load_table(self.test_biom),
             metadata=self.metadata,
             batch_category=self.batch_category,
@@ -352,7 +353,7 @@ class MultBatchVAE(MultVAE):
                  n_latent=32, n_hidden=64, basis=None,
                  dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 transform='pseudocount'):
+                 distribution='multinomial', transform='pseudocount'):
         super().__init__(n_input, n_latent, n_hidden, basis,
                          dropout, bias, batch_norm,
                          encoder_depth, learning_rate, scheduler,
@@ -527,7 +528,7 @@ class MultBatchVAE(MultVAE):
         return parser
 
 
-class TripletVAE(pl.LightningDataModule):
+class TripletVAE(pl.LightningModule):
     def __init__(self, vae_model, batch_model, n_input=32, n_hidden=64,
                  dropout=0.5, bias=True, batch_norm=False,
                  learning_rate=0.001,
@@ -544,11 +545,8 @@ class TripletVAE(pl.LightningDataModule):
             'scheduler': scheduler
         }
 
-    def forward(self, x):
-        return self.triplet_net.encode(x)
-
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        self.vae.train()
+    def training_step(self, batch, batch_idx):
+        # self.vae.train() # let the weights be frozen
         self.triplet_net.train()
 
         if len(self.trainer.lr_schedulers) >= 1:
@@ -577,29 +575,29 @@ class TripletVAE(pl.LightningDataModule):
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
+    def forward(self, x):
+        return self.triplet_net.encode(x)
+
+    def to_latent(self, X):
+        return self.forward(x)
+
     def configure_optimizers(self):
-        encode_params = self.vae.encoder.parameters()
-        decode_params = self.vae.decoder.parameters()
-        opt_g = torch.optim.Adam(
-            list(encode_params) + list(decode_params),
-            lr=self.hparams['learning_rate'])
-        opt_b = torch.optim.Adam(
-            list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
+        opt = torch.optim.Adam(
+            list(self.triplet_net.parameters()),
             lr=self.hparams['learning_rate'])
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
-                opt_g, T_0=2, T_mult=2)
+                opt, T_0=2, T_mult=2)
         elif self.hparams['scheduler'] == 'cosine':
-            scheduler = CosineAnnealingLR(
-                opt_g, T_max=10)
+            scheduler = CosineAnnealingLR(opt, T_max=10)
         elif self.hparams['scheduler'] == 'none':
-            return [opt_g, opt_b]
+            return [opt]
         else:
             raise ValueError(
                 f'Scheduler {self.scheduler} not defined.')
-        scheduler_b = CosineAnnealingLR(
-            opt_b, T_max=10)
-        return [opt_g, opt_b], [scheduler, scheduler_b]
+        scheduler = CosineAnnealingLR(
+            opt, T_max=10)
+        return [opt], [scheduler]
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
@@ -608,20 +606,18 @@ class TripletVAE(pl.LightningDataModule):
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
 
-            losses = self.vae(counts, batch_ids)
-            vae_loss, recon_loss, kl_div_z, kl_div_b = losses
-            assert torch.isnan(loss).item() is False
+            # losses = self.vae(counts, batch_ids)
+            # vae_loss, recon_loss, kl_div_z, kl_div_b = losses
             pos_u = self.vae.encode_marginalized(i_counts, i_batch)
             pos_v = self.vae.encode_marginalized(j_counts, j_batch)
             neg_v = self.vae.encode_marginalized(k_counts, k_batch)
             # Triplet loss
-            triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
-            loss = vae_loss + triplet_loss
+            loss = self.triplet_net(pos_u, pos_v, neg_v)
+            assert torch.isnan(loss).item() is False
+
             tensorboard_logs = {
                 'lr': current_lr,
-                'val/total_loss': loss,
-                'val/vae_loss': vae_loss,
-                'val/triplet_loss': triplet_loss
+                'val/loss': loss
             }
 
             # log the learning rate
@@ -661,15 +657,6 @@ class TripletVAE(pl.LightningDataModule):
             '--learning-rate', help='Learning rate',
             required=False, type=float, default=1e-3)
         parser.add_argument(
-            '--transform', help=('Specifies transform for preprocessing '
-                                 '(arcsine, pseudocount, clr)'),
-            required=False, type=str, default='pseudocount')
-        parser.add_argument(
-            '--distribution',
-            help=('Specifies decoder distribution, either '
-                  '`multinomial` or `gaussian`.'),
-            required=False, type=str, default='multinomial')
-        parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
                   '(choices include `cosine` and `steplr`'),
@@ -694,13 +681,17 @@ def add_data_specific_args(parent_parser, add_help=True):
         help='Sample metadata column for batch effects.',
         required=False, type=str, default=None)
     parser.add_argument(
+        '--class-category',
+        help='Sample metadata column for class predictions.',
+        required=False, type=str, default=None)
+    parser.add_argument(
         '--batch-size', help='Training batch size',
         required=False, type=int, default=32)
     # Arguments specific for trainer
     parser.add_argument(
         '--epochs', help='Training batch size',
         required=False, type=int, default=100)
-    parser.add_argument('--num-workers', type=int)
+    parser.add_argument('--num-workers', type=int, default=1)
     parser.add_argument('--gpus', type=int)
     parser.add_argument('--profile', type=bool, default=False)
     parser.add_argument('--grad-clip', type=int, default=10)

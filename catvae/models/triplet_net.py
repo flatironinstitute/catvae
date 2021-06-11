@@ -29,7 +29,7 @@ class TripletNet(nn.Module):
         self.init_emb()
 
     def init_emb(self):
-        initstd = 1 / math.sqrt(self.emb_dimension)
+        initstd = 1 / math.sqrt(self.embed_dim)
         self.embeddings.weight.data.normal_(0, initstd)
         self.embeddings.weight.data.normal_(0, initstd)
 

@@ -180,7 +180,7 @@ class LinearVAE(nn.Module):
             fx = torch.log(x + 1)                 # ILR transform for testing
             hx = (self.Psi @ fx.T).T              # B x D-1
         elif self.transform == 'none':
-            hx = x
+            hx = closure(x)
         else:
             raise ValueError(f'Unrecognzied transform {self.transform}')
         return hx
@@ -215,7 +215,9 @@ class LinearBatchVAE(LinearVAE):
     def __init__(self, input_dim, hidden_dim, latent_dim,
                  batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False, transform='arcsine',
+                 basis=None, bias=False,
+                 transform='arcsine',
+                 distribution='multinomial',
                  batch_norm=True, dropout=0.1):
         """ Account for batch effects.
 
