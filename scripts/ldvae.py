@@ -13,18 +13,23 @@ import yaml
 # Note that this is not going to be supported in the future
 # so use at your own risk
 def main(args):
+    print(args)
     train_biom = load_table(args.train_biom)
     test_biom = load_table(args.test_biom)
-    valid_biom = load_table(args.valid_biom)
+    valid_biom = load_table(args.val_biom)
     # looks like we can't specify splits
     # so we'll just combined train/validate tables
     # this could give scvi a slight advantage, but whatev
     t = train_biom.merge(valid_biom)
     # Need to hack in sample metadata
     D, _ = t.shape
+    metadata = pd.read_table(metadata, dtype=str)
+    index_name = metadata.columns[0]
+    metadata = metadata.set_index(index_name)
+
     obs_md = [{'taxonomy': 'None'} for v in range(D)]
     sample_md = [{'batch': np.asscalar(v)}
-                 for i, v in md.loc[t.ids(), args.batch_category]]
+                 for i, v in metadata.loc[t.ids(), args.batch_category]]
 
     # careful here, this requires at least biom 2.1.10
     # https://github.com/biocore/biom-format/pull/845
@@ -36,6 +41,7 @@ def main(args):
         adata, dropout_rate=args.dropout,
         n_latent=args.n_latent, n_layers=args.n_layers,
         n_hidden=args.n_hidden)
+    print(model)
     model.train(max_epochs=args.epochs,
                 plan_kwargs={'lr':args.learning_rate},
                 check_val_every_n_epoch=50)

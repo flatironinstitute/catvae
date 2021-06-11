@@ -179,6 +179,8 @@ class LinearVAE(nn.Module):
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                 # ILR transform for testing
             hx = (self.Psi @ fx.T).T              # B x D-1
+        elif self.transform == 'none':
+            hx = x
         else:
             raise ValueError(f'Unrecognzied transform {self.transform}')
         return hx
