@@ -163,10 +163,10 @@ class LinearVAE(nn.Module):
                 logits=logp, validate_args=False  # weird ...
             ).log_prob(x_in).mean()
         elif self.distribution == 'gaussian':
-
+            # MSE loss based out on DeepMicro
             # https://www.nature.com/articles/s41598-020-63159-5
             dist_loss = Normal(
-                loc=logp, scale=validate_args=False # weird ...
+                loc=logp, scale=1, validate_args=False # weird ...
             ).log_prob(x_in).mean()
         else:
             raise ValueError(
