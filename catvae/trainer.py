@@ -158,7 +158,7 @@ class MultVAE(pl.LightningModule):
             'learning_rate': learning_rate,
             'scheduler': scheduler,
             'transform': transform,
-            'distribution', distribution
+            'distribution': distribution
         }
         basis = self.set_basis(n_input, basis)
         self.vae = LinearVAE(

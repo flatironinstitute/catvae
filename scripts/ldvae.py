@@ -33,7 +33,7 @@ def main(args):
     scvi.data.setup_anndata(adata, layer="counts", batch_key="batch")
 
     model = scvi.model.LinearSCVI(
-        adata, dropout_rate=args.dropout
+        adata, dropout_rate=args.dropout,
         n_latent=args.n_latent, n_layers=args.n_layers,
         n_hidden=args.n_hidden)
     model.train(max_epochs=args.epochs,
@@ -53,7 +53,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=True)
-    parser = MultBatchVAE.add_model_specific_args(parser, add_help=False)
+    parser = MultVAE.add_model_specific_args(parser, add_help=False)
     parser = add_data_specific_args(parser, add_help=False)
     args = parser.parse_args()
     main(args)
