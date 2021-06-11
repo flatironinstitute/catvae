@@ -118,7 +118,8 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, latent_dim=None,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False, transform='arcsine',
+                 basis=None, bias=False,
+                 transform='arcsine', distribution='multinomial',
                  dropout=0.1, batch_norm=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
@@ -139,6 +140,7 @@ class LinearVAE(nn.Module):
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
+        self.distribution = distribution
         if self.transform == 'arcsine':
             self.input_embed = ArcsineEmbed(self.input_dim + 1,
                                             hidden_dim, dropout)
@@ -156,10 +158,20 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         logp = (self.Psi.t() @ x_out.t()).t()
-        mult_loss = Multinomial(
-            logits=logp, validate_args=False  # weird ...
-        ).log_prob(x_in).mean()
-        return mult_loss
+        if self.distribution == 'multinomial':
+            dist_loss = Multinomial(
+                logits=logp, validate_args=False  # weird ...
+            ).log_prob(x_in).mean()
+        elif self.distribution == 'gaussian':
+
+            # https://www.nature.com/articles/s41598-020-63159-5
+            dist_loss = Normal(
+                loc=logp, scale=validate_args=False # weird ...
+            ).log_prob(x_in).mean()
+        else:
+            raise ValueError(
+                f'Distribution {self.distribution} is not supported.')
+        return dist_loss
 
     def impute(self, x):
         if self.transform in {'arcsine', 'clr'}:

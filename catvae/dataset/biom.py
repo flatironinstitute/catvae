@@ -178,7 +178,7 @@ def collate_single_f(batch):
     return counts
 
 
-def collate_triple_f(batch):
+def collate_triplet_f(batch):
     i_counts_list = np.vstack([b[0] for b in batch])
     j_counts_list = np.vstack([b[1] for b in batch])
     k_counts_list = np.vstack([b[2] for b in batch])

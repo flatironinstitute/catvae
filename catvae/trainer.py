@@ -142,7 +142,7 @@ class MultVAE(pl.LightningModule):
     def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
                  dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 transform='pseudocount'):
+                 transform='pseudocount', distribution='multinomial'):
         super().__init__()
         # a hack to avoid the save_hyperparameters anti-pattern
         # https://github.com/PyTorchLightning/pytorch-lightning/issues/7443
@@ -157,7 +157,8 @@ class MultVAE(pl.LightningModule):
             'encoder_depth': encoder_depth,
             'learning_rate': learning_rate,
             'scheduler': scheduler,
-            'transform': transform
+            'transform': transform,
+            'distribution', distribution
         }
         basis = self.set_basis(n_input, basis)
         self.vae = LinearVAE(
@@ -168,6 +169,7 @@ class MultVAE(pl.LightningModule):
             encoder_depth=encoder_depth,
             batch_norm=batch_norm,
             dropout=dropout,
+            distribution=distribution,
             transform=transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -332,6 +334,11 @@ class MultVAE(pl.LightningModule):
                                  '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
         parser.add_argument(
+            '--distribution',
+            help=('Specifies decoder distribution, either '
+                  '`multinomial` or `gaussian`.'),
+            required=False, type=str, default='multinomial')
+        parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
                   '(choices include `cosine` and `steplr`'),
@@ -363,6 +370,7 @@ class MultBatchVAE(MultVAE):
             'batch_prior': batch_prior,
             'learning_rate': learning_rate,
             'scheduler': scheduler,
+            'distribution': distribution,
             'transform': transform,
         }
         self.gt_eigvectors = None
@@ -384,6 +392,7 @@ class MultBatchVAE(MultVAE):
             basis=basis,
             encoder_depth=encoder_depth,
             bias=bias,
+            distribution=distribution,
             transform=transform)
         self.gt_eigvectors = None
         self.gt_eigs = None
