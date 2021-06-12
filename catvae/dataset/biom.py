@@ -112,14 +112,7 @@ class Q2BiomBatchDataset(BiomDataset):
         features = np.empty(len(self.feature_ids), dtype=dict)
         for j, row in enumerate(feature_data.matrix_data.T):
             features[j] = {self.feature_ids[ids[row.indices[i]]]: row.data[i]}
-
-        sample_idx = self.table.ids()[i]
-        if self.batch_indices is not None:
-            batch_indices = self.batch_indices[i]
-        else:
-            batch_indices = None
-
-        return features, batch_indices
+        return features, i
 
 
 def _get_triplet(G, category):
@@ -215,12 +208,12 @@ def collate_batch_f(batch):
     return counts, batch_ids.squeeze()
 
 
-def collate_q2_batch_f(batch):
+def collate_q2_f(batch):
     feature_list = [b[0] for b in batch]
-    batch_ids = np.vstack([b[1] for b in batch])
+    sample_idx = [b[1] for b in batch]
     D = len(feature_list[0])
     features = np.empty(D, dtype=dict)
     for i in range(D):
         for b in feature_list:
             features[i] = {**feature[i], **b[i]}
-    return features, batch_ids.squeeze()
+    return features, sample_idx

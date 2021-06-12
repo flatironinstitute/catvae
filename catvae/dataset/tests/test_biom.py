@@ -44,5 +44,13 @@ class TestTripleDataset(unittest.TestCase):
         self.assertEqual(len(batch), 3)
 
 
+class TestQ2BiomDataset(unittest.TestCase):
+    def setUp(self):
+        pass
+
+    def test_biom_getitem(self):
+        pass
+
+
 if __name__ == '__main__':
     unittest.main()
