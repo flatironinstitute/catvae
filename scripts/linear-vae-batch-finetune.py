@@ -11,6 +11,7 @@ from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
 from biom import load_table
 from skbio import TreeNode
+from gneiss.util import match
 # this requires qiime2
 import qiime2
 from sklearn.pipeline import Pipeline
@@ -27,15 +28,8 @@ def main(args):
         class_category=args.class_category,
         batch_size=args.batch_size, num_workers=args.num_workers)
 
-    table = load_table(args.train_biom)
-    n_input = table.shape[0]
-
-    sample_metadata = pd.read_table(args.sample_metadata, dtype=str)
-    sample_metadata = sample_metadata.set_index(sample_metadata.columns[0])
-    sample_metadata = sample_metadata.loc[table.ids()]
-
     model = TripletVAE(
-        vae_model, batch_model, n_input, n_hidden=args.n_hidden,
+        vae_model, batch_model, n_input=args.n_hidden, n_hidden=args.n_hidden,
         dropout=args.dropout, bias=args.bias, batch_norm=args.batch_norm,
         learning_rate=args.learning_rate,
         scheduler=args.scheduler)

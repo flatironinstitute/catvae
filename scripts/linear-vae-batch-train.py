@@ -67,6 +67,9 @@ def main(args):
     # save hyper-parameters to yaml file
     with open(f'{args.output_directory}/hparams.yaml', 'w') as outfile:
         yaml.dump(model._hparams, outfile, default_flow_style=False)
+    # save batch class mappings
+    dm.batch_categories.to_csv(
+        f'{args.output_directory}/batch_categories.txt', sep='\t')
     # save tree to file if specified
     if os.path.exists(args.basis):
         tree = TreeNode.read(args.basis)

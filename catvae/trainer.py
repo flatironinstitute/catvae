@@ -46,6 +46,11 @@ class BiomDataModule(pl.LightningDataModule):
             self.collate_f = collate_single_f
         else:
             self.collate_f = collate_batch_f
+        # collect class mappings
+        train_dataset = BiomDataset(
+            load_table(self.train_biom),
+            metadata=self.metadata, batch_category=self.batch_category)
+        self.batch_categories = train_dataset.batch_cats
 
     def train_dataloader(self):
         train_dataset = BiomDataset(
@@ -563,9 +568,9 @@ class TripletVAE(pl.LightningModule):
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
         assert torch.isnan(loss).item() is False
-        pos_u = self.vae.encode_marginalized(i_counts, i_batch)
-        pos_v = self.vae.encode_marginalized(j_counts, j_batch)
-        neg_v = self.vae.encode_marginalized(k_counts, k_batch)
+        pos_u = self.vae.to_latent(i_counts, i_batch)
+        pos_v = self.vae.to_latent(j_counts, j_batch)
+        neg_v = self.vae.to_latent(k_counts, k_batch)
         # Triplet loss
         loss = self.triplet_net(pos_u, pos_v, neg_v)
         tensorboard_logs = {
@@ -602,15 +607,21 @@ class TripletVAE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             i_counts, j_counts, k_counts = batch
+            i_batch = self.bcm.predict_proba(i_counts)
+            j_batch = self.bcm.predict_proba(j_counts)
+            k_batch = self.bcm.predict_proba(k_counts)
             i_counts = i_counts.to(self.device)
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
+            i_batch = i_batch.to(self.device)
+            j_batch = j_batch.to(self.device)
+            k_batch = k_batch.to(self.device)
 
             # losses = self.vae(counts, batch_ids)
             # vae_loss, recon_loss, kl_div_z, kl_div_b = losses
-            pos_u = self.vae.encode_marginalized(i_counts, i_batch)
-            pos_v = self.vae.encode_marginalized(j_counts, j_batch)
-            neg_v = self.vae.encode_marginalized(k_counts, k_batch)
+            pos_u = self.vae.to_latent(i_counts, i_batch)
+            pos_v = self.vae.to_latent(j_counts, j_batch)
+            neg_v = self.vae.to_latent(k_counts, k_batch)
             # Triplet loss
             loss = self.triplet_net(pos_u, pos_v, neg_v)
             assert torch.isnan(loss).item() is False

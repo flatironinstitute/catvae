@@ -7,9 +7,6 @@ import torch
 from torch.utils.data import Dataset
 
 
-logger = logging.getLogger(__name__)
-
-
 class BiomDataset(Dataset):
     """Loads a `.biom` file.
 
@@ -26,8 +23,7 @@ class BiomDataset(Dataset):
             self,
             table: biom.Table,
             metadata: pd.DataFrame = None,
-            batch_category: str = None,
-    ):
+            batch_category: str = None):
         super(BiomDataset).__init__()
         self.table = table
         self.metadata = metadata
@@ -35,7 +31,6 @@ class BiomDataset(Dataset):
         self.populate()
 
     def populate(self):
-        logger.info("Preprocessing dataset")
 
         if self.metadata is not None:
             # match the metadata with the table
@@ -53,13 +48,11 @@ class BiomDataset(Dataset):
         self.batch_indices = None
         if self.batch_category is not None and self.metadata is not None:
             batch_cats = np.unique(self.metadata[self.batch_category].values)
-            batch_cats = pd.Series(
+            self.batch_cats = pd.Series(
                 np.arange(len(batch_cats)), index=batch_cats)
             self.batch_indices = np.array(
                 list(map(lambda x: batch_cats.loc[x],
                          self.metadata[self.batch_category].values)))
-
-        logger.info("Finished preprocessing dataset")
 
     def __len__(self) -> int:
         return len(self.table.ids())
@@ -151,7 +144,7 @@ class TripletDataset(BiomDataset):
         return len(self.table.ids())
 
     def __getitem__(self, i):
-        """ Returns all of the samples for a given subject
+        """ Returns a positive and negative sample for sample i
 
         Returns
         -------
