@@ -96,6 +96,32 @@ class BiomDataset(Dataset):
                 yield self.__getitem__(i)
 
 
+class Q2BiomBatchDataset(BiomDataset):
+    """ This is specific to q2 sample classifiers. """
+    def __init__(self,
+                 table: biom.Table,
+                 metadata: pd.DataFrame = None,
+                 batch_category: str = None):
+        super(Q2BiomBatchDataset).__init__()
+        self.feature_ids = table.ids('observation')
+
+    def __getitem__(self, i):
+        # This is taking code from here
+        # https://github.com/qiime2/q2-sample-classifier/
+        # blob/master/q2_sample_classifier/utilities.py#L64
+        features = np.empty(len(self.feature_ids), dtype=dict)
+        for j, row in enumerate(feature_data.matrix_data.T):
+            features[j] = {self.feature_ids[ids[row.indices[i]]]: row.data[i]}
+
+        sample_idx = self.table.ids()[i]
+        if self.batch_indices is not None:
+            batch_indices = self.batch_indices[i]
+        else:
+            batch_indices = None
+
+        return features, batch_indices
+
+
 def _get_triplet(G, category):
     """ Picks triplets based on class assignments. """
     i = np.random.randint(len(G))
@@ -187,3 +213,14 @@ def collate_batch_f(batch):
     counts = torch.from_numpy(counts_list).float()
     batch_ids = torch.from_numpy(batch_ids).long()
     return counts, batch_ids.squeeze()
+
+
+def collate_q2_batch_f(batch):
+    feature_list = [b[0] for b in batch]
+    batch_ids = np.vstack([b[1] for b in batch])
+    D = len(feature_list[0])
+    features = np.empty(D, dtype=dict)
+    for i in range(D):
+        for b in feature_list:
+            features[i] = {**feature[i], **b[i]}
+    return features, batch_ids.squeeze()

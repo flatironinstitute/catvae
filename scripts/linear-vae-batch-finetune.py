@@ -19,7 +19,8 @@ import yaml
 
 
 def main(args):
-    vae_model = MultBatchVAE.load_from_checkpoint(args.vae_model_path)
+    ckpt_path = os.path.join(args.vae_model_path, 'last_ckpt.pt')
+    vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path)
     batch_model = qiime2.Artifact.load(args.batch_model_path).view(Pipeline)
     dm = TripletDataModule(
         args.train_biom, args.test_biom, args.val_biom,
@@ -35,7 +36,6 @@ def main(args):
         scheduler=args.scheduler)
 
     print(args)
-    print(pytorch_lightning.__version__)
     print(model)
     # TODO: this checkpointing appears to be broken
     # it may have to do with the save_hyperparameters issue
