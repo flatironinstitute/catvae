@@ -51,7 +51,7 @@ class BiomDataset(Dataset):
             self.batch_cats = pd.Series(
                 np.arange(len(batch_cats)), index=batch_cats)
             self.batch_indices = np.array(
-                list(map(lambda x: batch_cats.loc[x],
+                list(map(lambda x: self.batch_cats.loc[x],
                          self.metadata[self.batch_category].values)))
 
     def __len__(self) -> int:

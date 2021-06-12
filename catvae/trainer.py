@@ -46,11 +46,12 @@ class BiomDataModule(pl.LightningDataModule):
             self.collate_f = collate_single_f
         else:
             self.collate_f = collate_batch_f
-        # collect class mappings
-        train_dataset = BiomDataset(
-            load_table(self.train_biom),
-            metadata=self.metadata, batch_category=self.batch_category)
-        self.batch_categories = train_dataset.batch_cats
+        # collect class mappings if they exist
+        if batch_category is not None:
+            train_dataset = BiomDataset(
+                load_table(self.train_biom),
+                metadata=self.metadata, batch_category=self.batch_category)
+            self.batch_categories = train_dataset.batch_cats
 
     def train_dataloader(self):
         train_dataset = BiomDataset(
