@@ -331,18 +331,19 @@ class MultVAE(pl.LightningModule):
             required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
+        #https://stackoverflow.com/a/15008806/1167475
+        parser.set_defaults(bias=True)
         parser.add_argument('--tss', dest='tss', action='store_true',
                             help=('Total sum scaling to convert counts '
                                   'to proportions.  This option is highly '
                                   'recommended against and will not be '
                                   'supported in the future.'))
-        parser.add_argument('--no-tss', dest='tss', action='store_false')
-        #https://stackoverflow.com/a/15008806/1167475
         parser.set_defaults(tss=False)
         parser.add_argument('--batch-norm', dest='batch_norm',
                             action='store_true')
         parser.add_argument('--no-batch-norm', dest='batch_norm',
                             action='store_false')
+        parser.set_defaults(batch_norm=True)
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
