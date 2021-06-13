@@ -11,7 +11,7 @@ from catvae.dataset.biom import (
     collate_single_f, collate_triplet_f,
     collate_batch_f)
 from catvae.models import LinearVAE, LinearBatchVAE, TripletNet
-from catvae.composition import (alr_basis, ilr_basis, identity_basis)
+from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
     metric_procrustes, metric_alignment, metric_orthogonality)
@@ -147,7 +147,7 @@ class TripletDataModule(pl.LightningDataModule):
 
 class MultVAE(pl.LightningModule):
     def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, batch_norm=False,
+                 dropout=0.5, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount', distribution='multinomial'):
         super().__init__()
@@ -160,6 +160,7 @@ class MultVAE(pl.LightningModule):
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
+            'tss' : tss
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'learning_rate': learning_rate,
@@ -221,6 +222,8 @@ class MultVAE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         self.vae.train()
         counts = batch.to(self.device)
+        if self.hparams.tss:  # only for benchmarking
+            counts = closure(counts)
         loss = self.vae(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
@@ -237,6 +240,8 @@ class MultVAE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             counts = batch
+            if self.hparams.tss:  # only for benchmarking
+                counts = closure(counts)
             loss = self.vae(counts)
             assert torch.isnan(loss).item() is False
 
@@ -326,6 +331,14 @@ class MultVAE(pl.LightningModule):
             required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
+        parser.add_argument('--tss', dest='tss', action='store_true',
+                            help=('Total sum scaling to convert counts '
+                                  'to proportions.  This option is highly '
+                                  'recommended against and will not be '
+                                  'supported in the future.'))
+        parser.add_argument('--no-tss', dest='tss', action='store_false')
+        #https://stackoverflow.com/a/15008806/1167475
+        parser.set_defaults(tss=False)
         parser.add_argument('--batch-norm', dest='batch_norm',
                             action='store_true')
         parser.add_argument('--no-batch-norm', dest='batch_norm',
@@ -357,7 +370,7 @@ class MultVAE(pl.LightningModule):
 class MultBatchVAE(MultVAE):
     def __init__(self, n_input, batch_prior, n_batches,
                  n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, batch_norm=False,
+                 dropout=0.5, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  distribution='multinomial', transform='pseudocount'):
         super().__init__(n_input, n_latent, n_hidden, basis,
@@ -371,6 +384,7 @@ class MultBatchVAE(MultVAE):
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
+            'tss': tss,
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'n_batches': n_batches,
