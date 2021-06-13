@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from catvae.trainer import (MultBatchVAE, TripletVAE, TripletDataModule,
                             add_data_specific_args)
+from catvae.model.batch_classify import Q2BatchClassifier
 import pytorch_lightning
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -22,13 +23,16 @@ def main(args):
     ckpt_path = os.path.join(args.vae_model_path, 'last_ckpt.pt')
     vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path)
     batch_model = qiime2.Artifact.load(args.batch_model_path).view(Pipeline)
+    categories = pd.read_table(
+        os.path.join(args.vae_model_path, 'batch_categories.txt'),
+        sep='\t', index_col=0, header=None)
+    batch_model = Q2BatchClassifier(batch_model, categories)
     dm = TripletDataModule(
         args.train_biom, args.test_biom, args.val_biom,
         metadata=args.sample_metadata,
         batch_category=args.batch_category,
         class_category=args.class_category,
         batch_size=args.batch_size, num_workers=args.num_workers)
-
     model = TripletVAE(
         vae_model, batch_model, n_input=args.n_hidden, n_hidden=args.n_hidden,
         dropout=args.dropout, bias=args.bias, batch_norm=args.batch_norm,

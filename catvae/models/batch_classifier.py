@@ -12,9 +12,10 @@ class Q2BatchClassifier(object):
         self._categories = categories
         sample_estimator.set_params(est__n_jobs=self.n_workers)
 
-    def __call__(self, feature_data : np.array, index : np.array):
+    def __call__(self, feature_data : np.array):
         # Borrowed from
         # https://github.com/qiime2/q2-sample-classifier/blob/
         # master/q2_sample_classifier/classify.py#L264
+        index = np.arange(len(feature_data))
         probs = predict_probabilities(sample_estimator, feature_data, index)
-        return probs
+        return probs[self._categories.index].values

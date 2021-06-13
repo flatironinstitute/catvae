@@ -96,6 +96,17 @@ class BiomDataset(Dataset):
                 yield self.__getitem__(i)
 
 
+def _sample2dict(feature_data, feature_ids, i):
+    # This is taking code from here
+    # https://github.com/qiime2/q2-sample-classifier/
+    # blob/master/q2_sample_classifier/utilities.py#L64
+    features = np.empty(1, dtype=dict)
+    row = feature_data[i]
+    features = {feature_ids[ix]: d
+                for ix, d in zip(row.indices, row.data)}
+    return features, i
+
+
 class Q2BiomDataset(BiomDataset):
     """ This is specific to q2 sample classifiers. """
     def __init__(self, table: biom.Table):
@@ -104,14 +115,7 @@ class Q2BiomDataset(BiomDataset):
         self.feature_data = table.matrix_data.T.tocsr()
 
     def __getitem__(self, i):
-        # This is taking code from here
-        # https://github.com/qiime2/q2-sample-classifier/
-        # blob/master/q2_sample_classifier/utilities.py#L64
-        features = np.empty(1, dtype=dict)
-        row = self.feature_data[i]
-        features = {self.feature_ids[ix]: d
-                    for ix, d in zip(row.indices, row.data)}
-        return features, i
+        return _sample2dict(self.feature_data, self.feature_ids, i)
 
 
 def _get_triplet(G, category):
@@ -157,6 +161,9 @@ class TripletDataset(BiomDataset):
         self.metadata = self.metadata.set_index(self.index_name)
         self.batch_dict = dict(list(
             self.metadata.groupby(self.batch_category)))
+        # for q2 sample classifier
+        self.feature_ids = table.ids('observation')
+        self.feature_data = table.matrix_data.T.tocsr()
 
     def __len__(self) -> int:
         return len(self.table.ids())
@@ -180,7 +187,12 @@ class TripletDataset(BiomDataset):
         i_counts = self.table.data(i, axis='sample')
         j_counts = self.table.data(j, axis='sample')
         k_counts = self.table.data(k, axis='sample')
-        return i_counts, j_counts, k_counts
+
+        i_dict = _sample2dict(self.feature_data, self.feature_ids, i)[0]
+        j_dict = _sample2dict(self.feature_data, self.feature_ids, j)[0]
+        k_dict = _sample2dict(self.feature_data, self.feature_ids, k)[0]
+
+        return i_counts, j_counts, k_counts, i_dict, j_dict, k_dict
 
 
 def collate_single_f(batch):
@@ -197,6 +209,23 @@ def collate_triplet_f(batch):
     j_counts = torch.from_numpy(j_counts_list).float()
     k_counts = torch.from_numpy(k_counts_list).float()
     return i_counts, j_counts, k_counts
+
+
+def collate_q2_triplet_f(batch):
+    i_counts_list = np.vstack([b[0] for b in batch])
+    j_counts_list = np.vstack([b[1] for b in batch])
+    k_counts_list = np.vstack([b[2] for b in batch])
+    i_dict_list = np.vstack([b[3] for b in batch])
+    j_dict_list = np.vstack([b[4] for b in batch])
+    k_dict_list = np.vstack([b[5] for b in batch])
+    i_counts = torch.from_numpy(i_counts_list).float()
+    j_counts = torch.from_numpy(j_counts_list).float()
+    k_counts = torch.from_numpy(k_counts_list).float()
+    i_dict = torch.from_numpy(i_dict_list).float()
+    j_dict = torch.from_numpy(j_dict_list).float()
+    k_dict = torch.from_numpy(k_dict_list).float()
+    return (i_counts, j_counts, k_counts,
+            i_dict, j_dict, k_dict)
 
 
 def collate_batch_f(batch):

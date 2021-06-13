@@ -240,7 +240,8 @@ class LinearBatchVAE(LinearVAE):
         """
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, latent_dim,
-            init_scale, basis=basis, encoder_depth=encoder_depth,
+            init_scale=init_scale, basis=basis,
+            encoder_depth=encoder_depth,
             bias=bias, transform=transform, dropout=dropout,
             batch_norm=batch_norm)
         self.batch_dim = batch_dim

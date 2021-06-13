@@ -8,8 +8,8 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingLR)
 from catvae.dataset.biom import (
     BiomDataset, TripletDataset,
-    collate_single_f, collate_triplet_f,
-    collate_batch_f)
+    collate_single_f, collate_q2_triplet_f,
+    collate_batch_f, )
 from catvae.models import LinearVAE, LinearBatchVAE, TripletNet
 from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
@@ -103,7 +103,6 @@ class TripletDataModule(pl.LightningDataModule):
             metadata, dtype=str)
         index_name = self.metadata.columns[0]
         self.metadata = self.metadata.set_index(index_name)
-        self.collate_f = collate_triplet_f
 
     def train_dataloader(self):
         train_dataset = TripletDataset(
@@ -113,7 +112,7 @@ class TripletDataModule(pl.LightningDataModule):
             class_category=self.class_category)
         train_dataloader = DataLoader(
             train_dataset, batch_size=self.batch_size,
-            collate_fn=self.collate_f, shuffle=True,
+            collate_fn=collate_q2_triplet_f, shuffle=True,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
         return train_dataloader
@@ -126,7 +125,7 @@ class TripletDataModule(pl.LightningDataModule):
             class_category=self.class_category)
         val_dataloader = DataLoader(
             val_dataset, batch_size=self.batch_size,
-            collate_fn=self.collate_f, shuffle=False,
+            collate_fn=collate_q2_triplet_f, shuffle=False,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
         return val_dataloader
@@ -139,7 +138,7 @@ class TripletDataModule(pl.LightningDataModule):
             class_category=self.class_category)
         test_dataloader = DataLoader(
             test_dataset, batch_size=self.batch_size,
-            collate_fn=self.collate_f,
+            collate_fn=collate_q2_triplet_f,
             shuffle=False, num_workers=self.num_workers,
             drop_last=True, pin_memory=True)
         return test_dataloader
@@ -160,7 +159,7 @@ class MultVAE(pl.LightningModule):
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
-            'tss' : tss
+            'tss' : tss,
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'learning_rate': learning_rate,
@@ -222,7 +221,7 @@ class MultVAE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         self.vae.train()
         counts = batch.to(self.device)
-        if self.hparams.tss:  # only for benchmarking
+        if self.hparams['tss']:  # only for benchmarking
             counts = closure(counts)
         loss = self.vae(counts)
         assert torch.isnan(loss).item() is False
@@ -240,7 +239,7 @@ class MultVAE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             counts = batch
-            if self.hparams.tss:  # only for benchmarking
+            if self.hparams['tss']:  # only for benchmarking
                 counts = closure(counts)
             loss = self.vae(counts)
             assert torch.isnan(loss).item() is False
@@ -371,13 +370,14 @@ class MultVAE(pl.LightningModule):
 class MultBatchVAE(MultVAE):
     def __init__(self, n_input, batch_prior, n_batches,
                  n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, tss=False, batch_norm=False,
+                 dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  distribution='multinomial', transform='pseudocount'):
-        super().__init__(n_input, n_latent, n_hidden, basis,
-                         dropout, bias, batch_norm,
-                         encoder_depth, learning_rate, scheduler,
-                         transform)
+        super().__init__(n_input, n_latent, n_hidden, basis=basis,
+                         dropout=dropout, bias=bias, batch_norm=batch_norm,
+                         encoder_depth=encoder_depth,
+                         learning_rate=learning_rate, scheduler=scheduler,
+                         transform=transform)
         self._hparams = {
             'n_input': n_input,
             'n_latent': n_latent,
@@ -385,7 +385,6 @@ class MultBatchVAE(MultVAE):
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
-            'tss': tss,
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'n_batches': n_batches,
@@ -404,7 +403,6 @@ class MultBatchVAE(MultVAE):
         batch_prior = batch_prior.reshape(1, -1).squeeze()
         batch_prior = torch.Tensor(batch_prior).float()
         basis = self.set_basis(n_input, basis)
-
         self.vae = LinearBatchVAE(
             n_input,
             hidden_dim=n_hidden,
@@ -576,10 +574,10 @@ class TripletVAE(pl.LightningModule):
         else:
             current_lr = self.hparams['learning_rate']
 
-        i_counts, j_counts, k_counts = batch
-        i_batch = self.bcm.predict_proba(i_counts)
-        j_batch = self.bcm.predict_proba(j_counts)
-        k_batch = self.bcm.predict_proba(k_counts)
+        i_counts, j_counts, k_counts, i_dict, j_dict, k_dict = batch
+        i_batch = self.bcm(i_dict)
+        j_batch = self.bcm(j_dict)
+        k_batch = self.bcm(k_dict)
         i_counts = i_counts.to(self.device)
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
@@ -622,10 +620,11 @@ class TripletVAE(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
-            i_counts, j_counts, k_counts = batch
-            i_batch = self.bcm.predict_proba(i_counts)
-            j_batch = self.bcm.predict_proba(j_counts)
-            k_batch = self.bcm.predict_proba(k_counts)
+            i_counts, j_counts, k_counts, i_dict, j_dict, k_dict = batch
+
+            i_batch = self.bcm(i_dict)
+            j_batch = self.bcm(j_dict)
+            k_batch = self.bcm(k_dict)
             i_counts = i_counts.to(self.device)
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
