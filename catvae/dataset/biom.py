@@ -96,22 +96,21 @@ class BiomDataset(Dataset):
                 yield self.__getitem__(i)
 
 
-class Q2BiomBatchDataset(BiomDataset):
+class Q2BiomDataset(BiomDataset):
     """ This is specific to q2 sample classifiers. """
-    def __init__(self,
-                 table: biom.Table,
-                 metadata: pd.DataFrame = None,
-                 batch_category: str = None):
-        super(Q2BiomBatchDataset).__init__()
+    def __init__(self, table: biom.Table):
+        super(Q2BiomDataset).__init__()
         self.feature_ids = table.ids('observation')
+        self.feature_data = table.matrix_data.T.tocsr()
 
     def __getitem__(self, i):
         # This is taking code from here
         # https://github.com/qiime2/q2-sample-classifier/
         # blob/master/q2_sample_classifier/utilities.py#L64
-        features = np.empty(len(self.feature_ids), dtype=dict)
-        for j, row in enumerate(feature_data.matrix_data.T):
-            features[j] = {self.feature_ids[ids[row.indices[i]]]: row.data[i]}
+        features = np.empty(1, dtype=dict)
+        row = self.feature_data[i]
+        features = {self.feature_ids[ix]: d
+                    for ix, d in zip(row.indices, row.data)}
         return features, i
 
 
@@ -209,11 +208,6 @@ def collate_batch_f(batch):
 
 
 def collate_q2_f(batch):
-    feature_list = [b[0] for b in batch]
-    sample_idx = [b[1] for b in batch]
-    D = len(feature_list[0])
-    features = np.empty(D, dtype=dict)
-    for i in range(D):
-        for b in feature_list:
-            features[i] = {**feature[i], **b[i]}
-    return features, sample_idx
+    features = np.vstack([b[0] for b in batch])
+    sample_idx = np.vstack([b[1] for b in batch])
+    return features, sample_idx.squeeze()
