@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from catvae.trainer import (MultBatchVAE, TripletVAE, TripletDataModule,
                             add_data_specific_args)
-from catvae.model.batch_classify import Q2BatchClassifier
+from catvae.models.batch_classifier import Q2BatchClassifier
 import pytorch_lightning
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -25,8 +25,9 @@ def main(args):
     batch_model = qiime2.Artifact.load(args.batch_model_path).view(Pipeline)
     categories = pd.read_table(
         os.path.join(args.vae_model_path, 'batch_categories.txt'),
-        sep='\t', index_col=0, header=None)
-    batch_model = Q2BatchClassifier(batch_model, categories)
+        sep='\t', header=None, dtype='str')
+    categories = categories.set_index(categories.columns[0])
+    batch_model = Q2BatchClassifier(batch_model, categories, args.num_workers)
     dm = TripletDataModule(
         args.train_biom, args.test_biom, args.val_biom,
         metadata=args.sample_metadata,

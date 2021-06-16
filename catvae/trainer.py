@@ -575,18 +575,18 @@ class TripletVAE(pl.LightningModule):
             current_lr = self.hparams['learning_rate']
 
         i_counts, j_counts, k_counts, i_dict, j_dict, k_dict = batch
-        i_batch = self.bcm(i_dict)
-        j_batch = self.bcm(j_dict)
-        k_batch = self.bcm(k_dict)
+        i_batch = torch.Tensor(self.bcm(i_dict)).float().to(self.device)
+        j_batch = torch.Tensor(self.bcm(j_dict)).float().to(self.device)
+        k_batch = torch.Tensor(self.bcm(k_dict)).float().to(self.device)
         i_counts = i_counts.to(self.device)
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
-        assert torch.isnan(loss).item() is False
         pos_u = self.vae.to_latent(i_counts, i_batch)
         pos_v = self.vae.to_latent(j_counts, j_batch)
         neg_v = self.vae.to_latent(k_counts, k_batch)
         # Triplet loss
         loss = self.triplet_net(pos_u, pos_v, neg_v)
+        assert torch.isnan(loss).item() is False
         tensorboard_logs = {
             'lr': current_lr,
             'train_loss': loss
@@ -621,16 +621,12 @@ class TripletVAE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             i_counts, j_counts, k_counts, i_dict, j_dict, k_dict = batch
-
-            i_batch = self.bcm(i_dict)
-            j_batch = self.bcm(j_dict)
-            k_batch = self.bcm(k_dict)
+            i_batch = torch.Tensor(self.bcm(i_dict)).float().to(self.device)
+            j_batch = torch.Tensor(self.bcm(j_dict)).float().to(self.device)
+            k_batch = torch.Tensor(self.bcm(k_dict)).float().to(self.device)
             i_counts = i_counts.to(self.device)
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
-            i_batch = i_batch.to(self.device)
-            j_batch = j_batch.to(self.device)
-            k_batch = k_batch.to(self.device)
 
             # losses = self.vae(counts, batch_ids)
             # vae_loss, recon_loss, kl_div_z, kl_div_b = losses
@@ -641,6 +637,12 @@ class TripletVAE(pl.LightningModule):
             loss = self.triplet_net(pos_u, pos_v, neg_v)
             assert torch.isnan(loss).item() is False
 
+            if len(self.trainer.lr_schedulers) >= 1:
+                lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+                current_lr = lr
+            else:
+                current_lr = self.learning_rate
+
             tensorboard_logs = {
                 'lr': current_lr,
                 'val/loss': loss
@@ -650,9 +652,7 @@ class TripletVAE(pl.LightningModule):
             return {'val_loss': loss, 'log': tensorboard_logs}
 
     def validation_epoch_end(self, outputs):
-        metrics = ['val/vae_loss',
-                   'val/triplet_loss',
-                   'val/total_loss']
+        metrics = ['val/loss']
         tensorboard_logs = {}
         for m in metrics:
             loss_f = lambda x: x['log'][m]

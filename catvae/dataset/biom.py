@@ -96,7 +96,7 @@ class BiomDataset(Dataset):
                 yield self.__getitem__(i)
 
 
-def _sample2dict(feature_data, feature_ids, i):
+def _sample2dict(feature_data, feature_ids, i, sample_ids=None):
     # This is taking code from here
     # https://github.com/qiime2/q2-sample-classifier/
     # blob/master/q2_sample_classifier/utilities.py#L64
@@ -163,6 +163,7 @@ class TripletDataset(BiomDataset):
             self.metadata.groupby(self.batch_category)))
         # for q2 sample classifier
         self.feature_ids = table.ids('observation')
+        self.sample_ids = table.ids('sample')
         self.feature_data = table.matrix_data.T.tocsr()
 
     def __len__(self) -> int:
@@ -187,11 +188,15 @@ class TripletDataset(BiomDataset):
         i_counts = self.table.data(i, axis='sample')
         j_counts = self.table.data(j, axis='sample')
         k_counts = self.table.data(k, axis='sample')
-
-        i_dict = _sample2dict(self.feature_data, self.feature_ids, i)[0]
-        j_dict = _sample2dict(self.feature_data, self.feature_ids, j)[0]
-        k_dict = _sample2dict(self.feature_data, self.feature_ids, k)[0]
-
+        i = self.metadata.index.get_loc(i)
+        j = self.metadata.index.get_loc(j)
+        k = self.metadata.index.get_loc(k)
+        i_dict = _sample2dict(self.feature_data, self.feature_ids,
+                              i, self.sample_ids)[0]
+        j_dict = _sample2dict(self.feature_data, self.feature_ids,
+                              j, self.sample_ids)[0]
+        k_dict = _sample2dict(self.feature_data, self.feature_ids,
+                              k, self.sample_ids)[0]
         return i_counts, j_counts, k_counts, i_dict, j_dict, k_dict
 
 
@@ -215,15 +220,15 @@ def collate_q2_triplet_f(batch):
     i_counts_list = np.vstack([b[0] for b in batch])
     j_counts_list = np.vstack([b[1] for b in batch])
     k_counts_list = np.vstack([b[2] for b in batch])
-    i_dict_list = np.vstack([b[3] for b in batch])
-    j_dict_list = np.vstack([b[4] for b in batch])
-    k_dict_list = np.vstack([b[5] for b in batch])
+    i_dict_list = [b[3] for b in batch]
+    j_dict_list = [b[4] for b in batch]
+    k_dict_list = [b[5] for b in batch]
     i_counts = torch.from_numpy(i_counts_list).float()
     j_counts = torch.from_numpy(j_counts_list).float()
     k_counts = torch.from_numpy(k_counts_list).float()
-    i_dict = torch.from_numpy(i_dict_list).float()
-    j_dict = torch.from_numpy(j_dict_list).float()
-    k_dict = torch.from_numpy(k_dict_list).float()
+    i_dict = i_dict_list
+    j_dict = j_dict_list
+    k_dict = k_dict_list
     return (i_counts, j_counts, k_counts,
             i_dict, j_dict, k_dict)
 
@@ -237,6 +242,6 @@ def collate_batch_f(batch):
 
 
 def collate_q2_f(batch):
-    features = np.vstack([b[0] for b in batch])
+    features = [b[0] for b in batch]
     sample_idx = np.vstack([b[1] for b in batch])
     return features, sample_idx.squeeze()

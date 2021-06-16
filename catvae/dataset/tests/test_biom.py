@@ -43,7 +43,7 @@ class TestTripleDataset(unittest.TestCase):
                               batch_category='batch',
                               class_category='treatment')
         batch = data[0]
-        self.assertEqual(len(batch), 3)
+        self.assertEqual(len(batch), 6)
 
 
 class TestQ2BiomDataset(unittest.TestCase):
@@ -78,7 +78,8 @@ class TestQ2BiomDataset(unittest.TestCase):
         ])
         ids = list(map(str, range(len(exp_sample))))
         exp_sample = dict(zip(ids, exp_sample))
-        self.assertDictEqual(exp_sample, features[0])
+        print(features)
+        self.assertDictEqual(exp_sample, features[0][0])
 
 
 if __name__ == '__main__':
