@@ -21,6 +21,10 @@ import yaml
 
 def main(args):
     ckpt_path = os.path.join(args.vae_model_path, 'last_ckpt.pt')
+    params = os.path.join(args.vae_model_path, 'hparams.yaml')
+    with open(params, 'r') as stream:
+        params = yaml.safe_load(stream)
+    print('parameters', params)
     vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path)
     batch_model = qiime2.Artifact.load(args.batch_model_path).view(Pipeline)
     categories = pd.read_table(
@@ -35,8 +39,9 @@ def main(args):
         class_category=args.class_category,
         batch_size=args.batch_size, num_workers=args.num_workers)
     model = TripletVAE(
-        vae_model, batch_model, n_input=args.n_hidden, n_hidden=args.n_hidden,
-        dropout=args.dropout, bias=args.bias, batch_norm=args.batch_norm,
+        vae_model, batch_model, n_input=int(params['n_latent']),
+        n_hidden=args.n_hidden, dropout=args.dropout,
+        bias=args.bias, batch_norm=args.batch_norm,
         learning_rate=args.learning_rate,
         scheduler=args.scheduler)
 
