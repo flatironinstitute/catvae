@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
-    CosineAnnealingWarmRestarts,
+    CosineAnnealingWarmRestarts, StepLR,
     CosineAnnealingLR)
 from catvae.dataset.biom import (
     BiomDataset, TripletDataset,
@@ -188,7 +188,7 @@ class MultVAE(pl.LightningModule):
             basis = ilr_basis(basis)
             assert basis.shape[1] == n_input, (
                 f'Basis shape {basis.shape} does '
-                f'not match tree dimension {len(n_input)}. '
+                f'not match tree dimension {n_input}. '
                 'Also make sure if your tree if aligned correctly '
                 'with `gneiss.util.match_tips`')
         elif basis == 'alr':
@@ -229,7 +229,7 @@ class MultVAE(pl.LightningModule):
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
             current_lr = lr
         else:
-            current_lr = self.learning_rate
+            current_lr = self.hparams['learning_rate']
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss, 'lr': current_lr
         }
@@ -248,7 +248,6 @@ class MultVAE(pl.LightningModule):
             rec_err = self.vae.get_reconstruction_loss(batch)
             tensorboard_logs = {'val_loss': loss,
                                 'val_rec_err': rec_err}
-
             # log the learning rate
             return {'val_loss': loss, 'log': tensorboard_logs}
 
@@ -261,12 +260,20 @@ class MultVAE(pl.LightningModule):
         rec_err = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_rec_err',
                                           rec_err, self.global_step)
+
+        loss_f = lambda x: x['log']['val_loss']
+        losses = list(map(loss_f, outputs))
+        loss = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val_loss',
+                                          loss, self.global_step)
+        self.log('val_loss', loss)
+
         ortho, eig_err = metric_orthogonality(self.vae)
         self.logger.experiment.add_scalar('orthogonality',
                                           ortho, self.global_step)
 
         tensorboard_logs = dict(
-            [('val_loss', rec_err),
+            [('val_loss', loss),
              ('orthogonality', ortho),
              ('eigenvalue-error', eig_err)]
         )
@@ -287,7 +294,7 @@ class MultVAE(pl.LightningModule):
                 'alignment', ma, self.global_step)
             tensorboard_logs = {**tensorboard_logs, **tlog}
 
-        return {'val_loss': rec_err, 'log': tensorboard_logs}
+        return {'val_loss': loss, 'log': tensorboard_logs}
 
     def test_epoch_end(self, outputs):
         pass
@@ -301,6 +308,8 @@ class MultVAE(pl.LightningModule):
         elif self.hparams['scheduler'] == 'cosine':
             scheduler = CosineAnnealingLR(
                 optimizer, T_max=10)
+        elif self.hparams['scheduler'] == 'steplr':
+            scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
         elif self.hparams['scheduler'] == 'none':
             return [optimizer]
         else:
@@ -594,11 +603,19 @@ class TripletVAE(pl.LightningModule):
         # log the learning rate
         return {'loss': loss, 'log': tensorboard_logs}
 
-    def forward(self, x):
+    def forward(self, x, b):
+        x = self.vae.vae.encode_marginalized(x, b)
         return self.triplet_net.encode(x)
 
-    def to_latent(self, X):
-        return self.forward(x)
+    def from_biom_to_latent(self, table):
+        features = self.bcm.biom_to_features(table)
+        b = self.bcm(features)
+        X = torch.Tensor(table.matrix_data.todense().T).float()
+        b = torch.Tensor(b).float()
+        return self.to_latent(X, b)
+
+    def to_latent(self, x, b):
+        return self.forward(x, b)
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(
@@ -609,6 +626,8 @@ class TripletVAE(pl.LightningModule):
                 opt, T_0=2, T_mult=2)
         elif self.hparams['scheduler'] == 'cosine':
             scheduler = CosineAnnealingLR(opt, T_max=10)
+        elif self.hparams['scheduler'] == 'steplr':
+            scheduler = StepLR(opt, step_size=10, gamma=0.5)
         elif self.hparams['scheduler'] == 'none':
             return [opt]
         else:
@@ -641,7 +660,7 @@ class TripletVAE(pl.LightningModule):
                 lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
                 current_lr = lr
             else:
-                current_lr = self.learning_rate
+                current_lr = self.hparams['learning_rate']
 
             tensorboard_logs = {
                 'lr': current_lr,

@@ -66,4 +66,4 @@ class TripletNet(nn.Module):
             losses += sum(neg_score)
         else:
             losses += neg_score
-        return -1 * losses
+        return -losses

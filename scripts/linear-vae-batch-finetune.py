@@ -24,7 +24,7 @@ def main(args):
     params = os.path.join(args.vae_model_path, 'hparams.yaml')
     with open(params, 'r') as stream:
         params = yaml.safe_load(stream)
-    print('parameters', params)
+    print('VAE hyper-parameters', params)
     vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path)
     batch_model = qiime2.Artifact.load(args.batch_model_path).view(Pipeline)
     categories = pd.read_table(
@@ -54,9 +54,13 @@ def main(args):
         "checkpoints")
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_path,
-        period=1,
-        monitor='val_loss',
-        mode='min',
+        period=10,
+        save_top_k=-1,
+        # this is broken :(
+        # https://github.com/PyTorchLightning/pytorch-lightning/issues/1764
+        #monitor='val_loss',
+        #mode='min',
+        every_n_val_epochs=10,
         verbose=True)
 
     if args.profile:

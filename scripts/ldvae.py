@@ -29,8 +29,7 @@ def main(args):
     D, _ = t.shape
 
     obs_md = [{'taxonomy': 'None'} for v in range(D)]
-    sample_md = [{'batch': np.asscalar(v)}
-                 for i, v in metadata.loc[t.ids(), args.batch_category]]
+    sample_md = [{'batch': v} for v in metadata.loc[t.ids(), args.batch_category].values]
 
     # careful here, this requires at least biom 2.1.10
     # https://github.com/biocore/biom-format/pull/845

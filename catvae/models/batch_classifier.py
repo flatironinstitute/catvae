@@ -1,8 +1,11 @@
 from sklearn.pipeline import Pipeline
 from q2_sample_classifier.classify import predict_probabilities
+from q2_sample_classifier.utilities import _extract_features
 import numpy as np
 import pandas as pd
 import biom
+
+
 
 
 class Q2BatchClassifier(object):
@@ -20,3 +23,6 @@ class Q2BatchClassifier(object):
         index = np.arange(len(feature_data))
         probs = predict_probabilities(self.sample_estimator, feature_data, index)
         return probs[self._categories.index].values
+
+    def biom_to_features(self, table):
+        return _extract_features(table)
