@@ -28,8 +28,10 @@ def main(args):
     t = train_biom.merge(valid_biom)
     D, _ = t.shape
 
-    obs_md = [{'taxonomy': 'None'} for v in range(D)]
-    sample_md = [{'batch': v} for v in metadata.loc[t.ids(), args.batch_category].values]
+    obs_md = {i: {'taxonomy': 'None'} for i in t.ids(axis='observation')}
+    sample_md = {i: {'batch': v} for i, v in zip(t.ids(), metadata.loc[t.ids(), args.batch_category].values)}
+    t.add_metadata(sample_md, axis='sample')
+    t.add_metadata(obs_md, axis='observation')
 
     # careful here, this requires at least biom 2.1.10
     # https://github.com/biocore/biom-format/pull/845
@@ -39,7 +41,7 @@ def main(args):
 
     model = scvi.model.LinearSCVI(
         adata, dropout_rate=args.dropout,
-        n_latent=args.n_latent, n_layers=args.n_layers,
+        n_latent=args.n_latent, n_layers=args.encoder_depth,
         n_hidden=args.n_hidden)
     print(model)
     model.train(max_epochs=args.epochs,

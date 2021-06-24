@@ -42,7 +42,6 @@ class BiomDataset(Dataset):
                 raise ValueError('`Index` must have a name either'
                                  '`sampleid`, `sample-id` or #SampleID')
             self.index_name = self.metadata.index.name
-
             self.metadata = self.metadata.reset_index()
 
         self.batch_indices = None
