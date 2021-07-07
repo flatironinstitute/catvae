@@ -28,7 +28,8 @@ def main(args):
                         encoder_depth=args.encoder_depth,
                         learning_rate=args.learning_rate,
                         scheduler=args.scheduler,
-                        transform=args.transform)
+                        transform=args.transform,
+                        grassmannian=args.grassmannian)
 
     print(args)
     print(model)

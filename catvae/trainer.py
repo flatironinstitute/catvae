@@ -149,7 +149,7 @@ class MultVAE(pl.LightningModule):
                  dropout=0.5, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount', distribution='multinomial',
-                 grassmanian=True):
+                 grassmannian=True):
         super().__init__()
         # a hack to avoid the save_hyperparameters anti-pattern
         # https://github.com/PyTorchLightning/pytorch-lightning/issues/7443
@@ -167,7 +167,7 @@ class MultVAE(pl.LightningModule):
             'scheduler': scheduler,
             'transform': transform,
             'distribution': distribution,
-            'grassmanian': grassmanian,
+            'grassmannian': grassmannian,
         }
         basis = self.set_basis(n_input, basis)
         self.vae = LinearVAE(
@@ -180,7 +180,7 @@ class MultVAE(pl.LightningModule):
             dropout=dropout,
             distribution=distribution,
             transform=transform,
-            grassmanian=grassmanian)
+            grassmannian=grassmannian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -367,11 +367,11 @@ class MultVAE(pl.LightningModule):
                                  '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
         parser.add_argument(
-            '--no-grassmanian',
+            '--no-grassmannian',
             help=('Specifies if grassmanian manifold optimization is disabled. '
                   'Turning this off remove unit norm constraint on decoder weights. '),
             required=False, dest='grassmanian', action='store_false')
-        parser.set_defaults(grassmanian=True)
+        parser.set_defaults(grassmannian=True)
         parser.add_argument(
             '--distribution',
             help=('Specifies decoder distribution, either '
@@ -436,7 +436,7 @@ class MultBatchVAE(MultVAE):
             bias=bias,
             distribution=distribution,
             transform=transform,
-            grassmanian=grassmanian)
+            grassmannian=grassmannian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
