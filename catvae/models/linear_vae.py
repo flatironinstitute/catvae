@@ -120,7 +120,7 @@ class LinearVAE(nn.Module):
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False,
                  transform='arcsine', distribution='multinomial',
-                 dropout=0.1, batch_norm=True):
+                 dropout=0.1, batch_norm=True, grassmanian=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -136,7 +136,8 @@ class LinearVAE(nn.Module):
             dropout=dropout, batch_norm=batch_norm)
         self.decoder = nn.Linear(
             latent_dim, self.input_dim, bias=self.bias)
-        geotorch.grassmannian(self.decoder, 'weight')
+        if grassmanian:
+            geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
@@ -243,7 +244,7 @@ class LinearBatchVAE(LinearVAE):
             init_scale=init_scale, basis=basis,
             encoder_depth=encoder_depth,
             bias=bias, transform=transform, dropout=dropout,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm, grassmanian=grassmanian)
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         batch_prior = batch_prior

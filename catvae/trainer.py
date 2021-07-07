@@ -148,7 +148,8 @@ class MultVAE(pl.LightningModule):
     def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
                  dropout=0.5, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 transform='pseudocount', distribution='multinomial'):
+                 transform='pseudocount', distribution='multinomial',
+                 grassmanian=True):
         super().__init__()
         # a hack to avoid the save_hyperparameters anti-pattern
         # https://github.com/PyTorchLightning/pytorch-lightning/issues/7443
@@ -165,7 +166,8 @@ class MultVAE(pl.LightningModule):
             'learning_rate': learning_rate,
             'scheduler': scheduler,
             'transform': transform,
-            'distribution': distribution
+            'distribution': distribution,
+            'grassmanian': grassmanian,
         }
         basis = self.set_basis(n_input, basis)
         self.vae = LinearVAE(
@@ -177,7 +179,8 @@ class MultVAE(pl.LightningModule):
             batch_norm=batch_norm,
             dropout=dropout,
             distribution=distribution,
-            transform=transform)
+            transform=transform,
+            grassmanian=grassmanian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -364,6 +367,13 @@ class MultVAE(pl.LightningModule):
                                  '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
         parser.add_argument(
+            '--no-grassmanian',
+            help=('Specifies if grassmanian manifold optimization is disabled. '
+                  'Turning this off remove unit norm constraint on decoder weights. '),
+            required=False, type=bool, default=True, dest='grassmanian',
+            action='store_false')
+        parser.set_defaults(grassmanian=True)
+        parser.add_argument(
             '--distribution',
             help=('Specifies decoder distribution, either '
                   '`multinomial` or `gaussian`.'),
@@ -382,7 +392,8 @@ class MultBatchVAE(MultVAE):
                  n_latent=32, n_hidden=64, basis=None,
                  dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 distribution='multinomial', transform='pseudocount'):
+                 distribution='multinomial', transform='pseudocount',
+                 grassmanian=True):
         super().__init__(n_input, n_latent, n_hidden, basis=basis,
                          dropout=dropout, bias=bias, batch_norm=batch_norm,
                          encoder_depth=encoder_depth,
@@ -402,7 +413,8 @@ class MultBatchVAE(MultVAE):
             'learning_rate': learning_rate,
             'scheduler': scheduler,
             'distribution': distribution,
-            'transform': transform
+            'transform': transform,
+            'grassmanian': grassmanian
         }
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -418,12 +430,14 @@ class MultBatchVAE(MultVAE):
             hidden_dim=n_hidden,
             latent_dim=n_latent,
             batch_dim=n_batches,
+            batch_norm=batch_norm,
             batch_prior=batch_prior,
             basis=basis,
             encoder_depth=encoder_depth,
             bias=bias,
             distribution=distribution,
-            transform=transform)
+            transform=transform,
+            grassmanian=grassmanian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
