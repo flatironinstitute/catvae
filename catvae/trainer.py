@@ -268,15 +268,16 @@ class MultVAE(pl.LightningModule):
                                           loss, self.global_step)
         self.log('val_loss', loss)
 
-        ortho, eig_err = metric_orthogonality(self.vae)
-        self.logger.experiment.add_scalar('orthogonality',
-                                          ortho, self.global_step)
-
-        tensorboard_logs = dict(
-            [('val_loss', loss),
-             ('orthogonality', ortho),
-             ('eigenvalue-error', eig_err)]
-        )
+        # Commenting out, since it is too slow...
+        # ortho, eig_err = metric_orthogonality(self.vae)
+        # self.logger.experiment.add_scalar('orthogonality',
+        #                                   ortho, self.global_step)
+        # tensorboard_logs = dict(
+        #     [('val_loss', loss),
+        #      ('orthogonality', ortho),
+        #      ('eigenvalue-error', eig_err)]
+        # )
+        tensorboard_logs = {'val_loss': loss, 'val_rec_error': rec_err}
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
             ms = metric_subspace(self.vae, self.gt_eigvectors, self.gt_eigs)
@@ -401,7 +402,7 @@ class MultBatchVAE(MultVAE):
             'learning_rate': learning_rate,
             'scheduler': scheduler,
             'distribution': distribution,
-            'transform': transform,
+            'transform': transform
         }
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -439,7 +440,19 @@ class MultBatchVAE(MultVAE):
         self.vae.decoder.weight.requires_grad = False
 
     def to_latent(self, X, b):
-        """ Casts to latent space
+        """ Casts to latent space using predicted batch probabilities.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+           Counts of interest (N x D)
+        b : torch.Tensor
+           Batch membership (N)
+        """
+        return self.vae.encode(X, b)
+
+    def to_latent_marginalized(self, X, b):
+        """ Casts to latent space using predicted batch probabilities.
 
         Parameters
         ----------
@@ -524,6 +537,7 @@ class MultBatchVAE(MultVAE):
             rec_err = sum(losses) / len(losses)
             self.logger.experiment.add_scalar(
                 m, rec_err, self.global_step)
+            self.log(m, rec_err)
             tensorboard_logs[m] = rec_err
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
