@@ -370,8 +370,7 @@ class MultVAE(pl.LightningModule):
             '--no-grassmanian',
             help=('Specifies if grassmanian manifold optimization is disabled. '
                   'Turning this off remove unit norm constraint on decoder weights. '),
-            required=False, type=bool, default=True, dest='grassmanian',
-            action='store_false')
+            required=False, dest='grassmanian', action='store_false')
         parser.set_defaults(grassmanian=True)
         parser.add_argument(
             '--distribution',
