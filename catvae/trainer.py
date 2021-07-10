@@ -68,6 +68,7 @@ class BiomDataModule(pl.LightningDataModule):
         val_dataset = BiomDataset(
             load_table(self.val_biom),
             metadata=self.metadata, batch_category=self.batch_category)
+        batch_size = min(len(val_dataset) - 1, self.batch_size)
         val_dataloader = DataLoader(
             val_dataset, batch_size=self.batch_size,
             collate_fn=self.collate_f, shuffle=False,
@@ -392,7 +393,7 @@ class MultBatchVAE(MultVAE):
                  dropout=0.5, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  distribution='multinomial', transform='pseudocount',
-                 grassmanian=True):
+                 grassmannian=True):
         super().__init__(n_input, n_latent, n_hidden, basis=basis,
                          dropout=dropout, bias=bias, batch_norm=batch_norm,
                          encoder_depth=encoder_depth,
@@ -413,7 +414,7 @@ class MultBatchVAE(MultVAE):
             'scheduler': scheduler,
             'distribution': distribution,
             'transform': transform,
-            'grassmanian': grassmanian
+            'grassmannian': grassmannian
         }
         self.gt_eigvectors = None
         self.gt_eigs = None
