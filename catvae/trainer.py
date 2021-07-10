@@ -70,7 +70,7 @@ class BiomDataModule(pl.LightningDataModule):
             metadata=self.metadata, batch_category=self.batch_category)
         batch_size = min(len(val_dataset) - 1, self.batch_size)
         val_dataloader = DataLoader(
-            val_dataset, batch_size=self.batch_size,
+            val_dataset, batch_size=batch_size,
             collate_fn=self.collate_f, shuffle=False,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
