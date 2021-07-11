@@ -391,9 +391,9 @@ class MultBatchVAE(MultVAE):
     def __init__(self, n_input, batch_prior, n_batches,
                  n_latent=32, n_hidden=64, basis=None,
                  dropout=0.5, bias=True, batch_norm=False,
-                 encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 distribution='multinomial', transform='pseudocount',
-                 grassmannian=True):
+                 encoder_depth=1, learning_rate=0.001, vae_lr=0.001,
+                 scheduler='cosine', distribution='multinomial',
+                 transform='pseudocount', grassmannian=True):
         super().__init__(n_input, n_latent, n_hidden, basis=basis,
                          dropout=dropout, bias=bias, batch_norm=batch_norm,
                          encoder_depth=encoder_depth,
@@ -585,7 +585,7 @@ class MultBatchVAE(MultVAE):
         parser.add_argument(
             '--load-vae-weights',
             help=('Pre-trained linear VAE weights.'),
-            required=True, type=str, default=None)
+            required=False, type=str, default=None)
         parser.add_argument(
             '--vae-lr',
             help=('Learning rate of VAE weights'),
