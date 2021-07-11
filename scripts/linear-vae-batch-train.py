@@ -34,9 +34,15 @@ def main(args):
             batch_norm=args.batch_norm,
             encoder_depth=args.encoder_depth,
             learning_rate=args.learning_rate,
+            var_lr=args.vae_lr,
             scheduler=args.scheduler,
             transform=args.transform,
             grassmannian=args.grassmannian)
+        if args.load_vae_weights is not None:
+            # initialize encoder/decoder weights with pretrained VAE
+            other_model = MultVAE.load_from_checkpoint(args.load_vae_weights)
+            model.vae.encoder = other_model.vae.encoder
+            model.vae.decoder = other_model.vae.decoder
 
     print(args)
     print(model)

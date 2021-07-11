@@ -344,7 +344,7 @@ class MultVAE(pl.LightningModule):
             required=False, type=float, default=0.1)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
-        #https://stackoverflow.com/a/15008806/1167475
+        # https://stackoverflow.com/a/15008806/1167475
         parser.set_defaults(bias=True)
         parser.add_argument('--tss', dest='tss', action='store_true',
                             help=('Total sum scaling to convert counts '
@@ -411,6 +411,7 @@ class MultBatchVAE(MultVAE):
             'n_batches': n_batches,
             'batch_prior': batch_prior,
             'learning_rate': learning_rate,
+            'vae_lr': vae_lr,
             'scheduler': scheduler,
             'distribution': distribution,
             'transform': transform,
@@ -442,7 +443,7 @@ class MultBatchVAE(MultVAE):
         self.gt_eigs = None
 
     def initialize_batch(self, beta):
-        # apparently this is not recommended, but fuck it
+        # apparently this is not recommended, but whatev
         self.vae.beta.weight.data = beta.data
         self.vae.beta.requires_grad = False
         self.vae.beta.weight.requires_grad = False
@@ -502,7 +503,7 @@ class MultBatchVAE(MultVAE):
         decode_params = self.vae.decoder.parameters()
         opt_g = torch.optim.Adam(
             list(encode_params) + list(decode_params),
-            lr=self.hparams['learning_rate'])
+            lr=self.hparams['vae_lr'])
         opt_b = torch.optim.Adam(
             list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
             lr=self.hparams['learning_rate'])
@@ -581,6 +582,14 @@ class MultBatchVAE(MultVAE):
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=True, type=str, default=None)
+        parser.add_argument(
+            '--load-vae-weights',
+            help=('Pre-trained linear VAE weights.'),
+            required=True, type=str, default=None)
+        parser.add_argument(
+            '--vae-lr',
+            help=('Learning rate of VAE weights'),
+            required=False, type=float, default=1e-3)
         return parser
 
 
