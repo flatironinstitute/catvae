@@ -305,7 +305,7 @@ class MultVAE(pl.LightningModule):
         pass
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             self.vae.parameters(), lr=self.hparams['learning_rate'])
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
@@ -354,9 +354,7 @@ class MultVAE(pl.LightningModule):
         parser.set_defaults(tss=False)
         parser.add_argument('--batch-norm', dest='batch_norm',
                             action='store_true')
-        parser.add_argument('--no-batch-norm', dest='batch_norm',
-                            action='store_false')
-        parser.set_defaults(batch_norm=True)
+        parser.set_defaults(batch_norm=False)
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -501,12 +499,12 @@ class MultBatchVAE(MultVAE):
     def configure_optimizers(self):
         encode_params = self.vae.encoder.parameters()
         decode_params = self.vae.decoder.parameters()
-        opt_g = torch.optim.Adam(
+        opt_g = torch.optim.AdamW(
             list(encode_params) + list(decode_params),
             lr=self.hparams['vae_lr'])
-        opt_b = torch.optim.Adam(
+        opt_b = torch.optim.AdamW(
             list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
-            lr=self.hparams['learning_rate'])
+            lr=self.hparams['learning_rate'], weight_decay=0.001)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
@@ -655,7 +653,7 @@ class TripletVAE(pl.LightningModule):
         return self.forward(x, b)
 
     def configure_optimizers(self):
-        opt = torch.optim.Adam(
+        opt = torch.optim.AdamW(
             list(self.triplet_net.parameters()),
             lr=self.hparams['learning_rate'])
         if self.hparams['scheduler'] == 'cosine_warm':

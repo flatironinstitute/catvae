@@ -44,6 +44,9 @@ def main(args):
             other_model = MultVAE.load_from_checkpoint(args.load_vae_weights)
             model.vae.encoder = other_model.vae.encoder
             model.vae.decoder = other_model.vae.decoder
+            model.vae.log_sigma_sq = other_model.vae.log_sigma_sq
+            model.vae.variational_logvars = other_model.vae.variational_logvars
+            # Note that input_embed isn't handled here.
 
     print(args)
     print(model)
