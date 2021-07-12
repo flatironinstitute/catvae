@@ -306,7 +306,7 @@ class MultVAE(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
-            self.vae.parameters(), lr=self.hparams['learning_rate'])
+            self.vae.parameters(), lr=self.hparams['learning_rate'], weight_decay=0)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
@@ -501,7 +501,7 @@ class MultBatchVAE(MultVAE):
         decode_params = self.vae.decoder.parameters()
         opt_g = torch.optim.AdamW(
             list(encode_params) + list(decode_params),
-            lr=self.hparams['vae_lr'])
+            lr=self.hparams['vae_lr'], weight_decay=0)
         opt_b = torch.optim.AdamW(
             list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
             lr=self.hparams['learning_rate'], weight_decay=0.001)
