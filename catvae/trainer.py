@@ -147,7 +147,7 @@ class TripletDataModule(pl.LightningDataModule):
 
 class MultVAE(pl.LightningModule):
     def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, tss=False, batch_norm=False,
+                 dropout=0, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount', distribution='multinomial',
                  grassmannian=True):
@@ -307,6 +307,8 @@ class MultVAE(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
             self.vae.parameters(), lr=self.hparams['learning_rate'], weight_decay=0)
+        # optimizer = torch.optim.SGD(
+        #     self.vae.parameters(), lr=self.hparams['learning_rate'])
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
@@ -341,7 +343,7 @@ class MultVAE(pl.LightningModule):
             required=False, type=int, default=64)
         parser.add_argument(
             '--dropout', help='Dropout probability',
-            required=False, type=float, default=0.1)
+            required=False, type=float, default=0)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
         # https://stackoverflow.com/a/15008806/1167475
@@ -388,7 +390,7 @@ class MultVAE(pl.LightningModule):
 class MultBatchVAE(MultVAE):
     def __init__(self, n_input, batch_prior, n_batches,
                  n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, batch_norm=False,
+                 dropout=0, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, vae_lr=0.001,
                  scheduler='cosine', distribution='multinomial',
                  transform='pseudocount', grassmannian=True):

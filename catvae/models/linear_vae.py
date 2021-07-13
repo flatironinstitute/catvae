@@ -23,7 +23,7 @@ def get_basis(input_dim, basis=None):
 
 
 class ArcsineEmbed(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, dropout=0):
         super(ArcsineEmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
@@ -43,7 +43,7 @@ class ArcsineEmbed(nn.Module):
 
 
 class CLREmbed(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, dropout=0):
         super(CLREmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
@@ -68,7 +68,7 @@ class Encoder(nn.Module):
     def __init__(self, input_dim: int,
                  hidden_dim: int,
                  latent_dim: int, bias: bool = False,
-                 dropout: float = 0.1, batch_norm: bool = True,
+                 dropout: float = 0, batch_norm: bool = True,
                  depth: int = 1, init_scale: float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
@@ -120,7 +120,7 @@ class LinearVAE(nn.Module):
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=False,
                  transform='arcsine', distribution='multinomial',
-                 dropout=0.1, batch_norm=True, grassmannian=True):
+                 dropout=0, batch_norm=True, grassmannian=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -219,7 +219,7 @@ class LinearBatchVAE(LinearVAE):
                  basis=None, bias=False,
                  transform='arcsine',
                  distribution='multinomial',
-                 batch_norm=True, dropout=0.1,
+                 batch_norm=True, dropout=0,
                  grassmannian=True):
         """ Account for batch effects.
 
