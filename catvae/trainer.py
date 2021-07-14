@@ -6,15 +6,14 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR,
     CosineAnnealingLR)
-from catvae.dataset.biom import (
-    BiomDataset, TripletDataset,
-    collate_single_f, collate_q2_triplet_f,
-    collate_batch_f, )
-from catvae.models import LinearVAE, LinearBatchVAE, TripletNet
+from catvae.dataset.biom import BiomDataset, collate_single_f, collate_batch_f
+from catvae.models import LinearVAE, LinearBatchVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
-    metric_procrustes, metric_alignment, metric_orthogonality)
+    metric_procrustes, metric_alignment,
+    # metric_orthogonality
+)
 import pytorch_lightning as pl
 
 from biom import load_table
@@ -104,7 +103,7 @@ class MultVAE(pl.LightningModule):
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
-            'tss' : tss,
+            'tss': tss,
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'learning_rate': learning_rate,
@@ -249,9 +248,8 @@ class MultVAE(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
-            self.vae.parameters(), lr=self.hparams['learning_rate'], weight_decay=0)
-        # optimizer = torch.optim.SGD(
-        #     self.vae.parameters(), lr=self.hparams['learning_rate'])
+            self.vae.parameters(), lr=self.hparams['learning_rate'],
+            weight_decay=0)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
@@ -312,8 +310,9 @@ class MultVAE(pl.LightningModule):
             required=False, type=str, default='pseudocount')
         parser.add_argument(
             '--no-grassmannian',
-            help=('Specifies if grassmanian manifold optimization is disabled. '
-                  'Turning this off remove unit norm constraint on decoder weights. '),
+            help=('Specifies if grassmanian manifold optimization '
+                  'is disabled. Turning this off will remove unit norm '
+                  'constraint on decoder weights. '),
             required=False, dest='grassmanian', action='store_false')
         parser.set_defaults(grassmannian=True)
         parser.add_argument(
