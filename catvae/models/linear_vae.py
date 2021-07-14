@@ -167,7 +167,7 @@ class LinearVAE(nn.Module):
             # MSE loss based out on DeepMicro
             # https://www.nature.com/articles/s41598-020-63159-5
             dist_loss = Normal(
-                loc=logp, scale=1, validate_args=False # weird ...
+                loc=logp, scale=1, validate_args=False  # weird ...
             ).log_prob(x_in).mean()
         else:
             raise ValueError(
