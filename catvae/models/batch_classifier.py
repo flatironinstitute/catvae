@@ -1,6 +1,10 @@
 from sklearn.pipeline import Pipeline
-from q2_sample_classifier.classify import predict_probabilities
-from q2_sample_classifier.utilities import _extract_features
+import warnings
+try:
+    from q2_sample_classifier.classify import predict_probabilities
+    from q2_sample_classifier.utilities import _extract_features
+except:
+    warnings.warn('q2_sample_classifier not installed.')
 import numpy as np
 import pandas as pd
 import biom

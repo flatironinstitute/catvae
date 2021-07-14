@@ -252,12 +252,12 @@ class LinearBatchVAE(LinearVAE):
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
+        self.batch_embed = nn.Embedding(batch_dim, latent_dim)
 
     def encode(self, x, b):
         hx = self.impute(x)
-        batch_effects = self.beta(b)
-        hx = hx - batch_effects
-        z = self.encoder(hx)
+        zb = self.batch_embed(b)
+        z = self.encoder(hx) - zb
         return z
 
     def encode_marginalized(self, x, b):
