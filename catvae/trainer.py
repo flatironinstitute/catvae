@@ -90,7 +90,7 @@ class BiomDataModule(pl.LightningDataModule):
 
 class MultVAE(pl.LightningModule):
     def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, tss=False, batch_norm=False,
+                 dropout=0, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount', distribution='multinomial',
                  grassmannian=True):
@@ -248,8 +248,10 @@ class MultVAE(pl.LightningModule):
         pass
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.vae.parameters(), lr=self.hparams['learning_rate'])
+        optimizer = torch.optim.AdamW(
+            self.vae.parameters(), lr=self.hparams['learning_rate'], weight_decay=0)
+        # optimizer = torch.optim.SGD(
+        #     self.vae.parameters(), lr=self.hparams['learning_rate'])
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
@@ -284,10 +286,10 @@ class MultVAE(pl.LightningModule):
             required=False, type=int, default=64)
         parser.add_argument(
             '--dropout', help='Dropout probability',
-            required=False, type=float, default=0.1)
+            required=False, type=float, default=0)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
-        #https://stackoverflow.com/a/15008806/1167475
+        # https://stackoverflow.com/a/15008806/1167475
         parser.set_defaults(bias=True)
         parser.add_argument('--tss', dest='tss', action='store_true',
                             help=('Total sum scaling to convert counts '
@@ -297,9 +299,7 @@ class MultVAE(pl.LightningModule):
         parser.set_defaults(tss=False)
         parser.add_argument('--batch-norm', dest='batch_norm',
                             action='store_true')
-        parser.add_argument('--no-batch-norm', dest='batch_norm',
-                            action='store_false')
-        parser.set_defaults(batch_norm=True)
+        parser.set_defaults(batch_norm=False)
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -333,10 +333,10 @@ class MultVAE(pl.LightningModule):
 class MultBatchVAE(MultVAE):
     def __init__(self, n_input, batch_prior, n_batches,
                  n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, batch_norm=False,
-                 encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 distribution='multinomial', transform='pseudocount',
-                 grassmannian=True):
+                 dropout=0, bias=True, batch_norm=False,
+                 encoder_depth=1, learning_rate=0.001, vae_lr=0.001,
+                 scheduler='cosine', distribution='multinomial',
+                 transform='pseudocount', grassmannian=True):
         super().__init__(n_input, n_latent, n_hidden, basis=basis,
                          dropout=dropout, bias=bias, batch_norm=batch_norm,
                          encoder_depth=encoder_depth,
@@ -354,6 +354,7 @@ class MultBatchVAE(MultVAE):
             'n_batches': n_batches,
             'batch_prior': batch_prior,
             'learning_rate': learning_rate,
+            'vae_lr': vae_lr,
             'scheduler': scheduler,
             'distribution': distribution,
             'transform': transform,
@@ -385,7 +386,7 @@ class MultBatchVAE(MultVAE):
         self.gt_eigs = None
 
     def initialize_batch(self, beta):
-        # apparently this is not recommended, but fuck it
+        # apparently this is not recommended, but whatev
         self.vae.beta.weight.data = beta.data
         self.vae.beta.requires_grad = False
         self.vae.beta.weight.requires_grad = False
@@ -443,12 +444,12 @@ class MultBatchVAE(MultVAE):
     def configure_optimizers(self):
         encode_params = self.vae.encoder.parameters()
         decode_params = self.vae.decoder.parameters()
-        opt_g = torch.optim.Adam(
+        opt_g = torch.optim.AdamW(
             list(encode_params) + list(decode_params),
-            lr=self.hparams['learning_rate'])
-        opt_b = torch.optim.Adam(
+            lr=self.hparams['vae_lr'], weight_decay=0)
+        opt_b = torch.optim.AdamW(
             list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
-            lr=self.hparams['learning_rate'])
+            lr=self.hparams['learning_rate'], weight_decay=0.001)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
@@ -524,6 +525,14 @@ class MultBatchVAE(MultVAE):
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=True, type=str, default=None)
+        parser.add_argument(
+            '--load-vae-weights',
+            help=('Pre-trained linear VAE weights.'),
+            required=False, type=str, default=None)
+        parser.add_argument(
+            '--vae-lr',
+            help=('Learning rate of VAE weights'),
+            required=False, type=float, default=1e-3)
         return parser
 
 
