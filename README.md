@@ -73,3 +73,7 @@ W = vae_model.vae.decoder.weight.detach().numpy()
 names = [n.name for n in tree.tips()]
 cW = pd.DataFrame(Psi.T @ W, index=names)
 ```
+
+## Training the VAE models
+
+Please refer to the Jupyter notebooks under the `ipynb` folder.
