@@ -118,9 +118,9 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, latent_dim=None,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False,
-                 transform='arcsine', distribution='multinomial',
-                 dropout=0, batch_norm=True, grassmannian=True):
+                 basis=None, bias=True,
+                 transform='pseudocount', distribution='multinomial',
+                 dropout=0, batch_norm=False, grassmannian=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -186,6 +186,12 @@ class LinearVAE(nn.Module):
             raise ValueError(f'Unrecognzied transform {self.transform}')
         return hx
 
+    def sample(self, x):
+        z_mean = self.encode(x)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
+
     def encode(self, x):
         hx = self.impute(x)
         z = self.encoder(hx)
@@ -216,10 +222,10 @@ class LinearBatchVAE(LinearVAE):
     def __init__(self, input_dim, hidden_dim, latent_dim,
                  batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False,
-                 transform='arcsine',
+                 basis=None, bias=True,
+                 transform='pseudocount',
                  distribution='multinomial',
-                 batch_norm=True, dropout=0,
+                 batch_norm=False, dropout=0,
                  grassmannian=True):
         """ Account for batch effects.
 
@@ -285,6 +291,16 @@ class LinearBatchVAE(LinearVAE):
         hx = hx - batch_effects
         z = self.encoder(hx)
         return z
+
+    def sample(self, x, b, size=None):
+        # obtain mean of latent distribution
+        z_mean = self.encode(x, b)
+        if size is None:
+            eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        else:
+            eps = torch.normal(torch.zeros(size), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
 
     def forward(self, x, b):
         z_mean = self.encode(x, b)
