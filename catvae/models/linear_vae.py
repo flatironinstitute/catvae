@@ -23,7 +23,7 @@ def get_basis(input_dim, basis=None):
 
 
 class ArcsineEmbed(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, dropout=0):
         super(ArcsineEmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
@@ -43,7 +43,7 @@ class ArcsineEmbed(nn.Module):
 
 
 class CLREmbed(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, dropout=0):
         super(CLREmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
@@ -68,7 +68,7 @@ class Encoder(nn.Module):
     def __init__(self, input_dim: int,
                  hidden_dim: int,
                  latent_dim: int, bias: bool = False,
-                 dropout: float = 0.1, batch_norm: bool = True,
+                 dropout: float = 0, batch_norm: bool = True,
                  depth: int = 1, init_scale: float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
@@ -118,8 +118,9 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, latent_dim=None,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False, transform='arcsine',
-                 dropout=0.1, batch_norm=True):
+                 basis=None, bias=False,
+                 transform='arcsine', distribution='multinomial',
+                 dropout=0, batch_norm=True, grassmannian=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -135,10 +136,12 @@ class LinearVAE(nn.Module):
             dropout=dropout, batch_norm=batch_norm)
         self.decoder = nn.Linear(
             latent_dim, self.input_dim, bias=self.bias)
-        geotorch.grassmannian(self.decoder, 'weight')
+        if grassmannian:
+            geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
         self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
+        self.distribution = distribution
         if self.transform == 'arcsine':
             self.input_embed = ArcsineEmbed(self.input_dim + 1,
                                             hidden_dim, dropout)
@@ -156,10 +159,20 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         logp = (self.Psi.t() @ x_out.t()).t()
-        mult_loss = Multinomial(
-            logits=logp, validate_args=False  # weird ...
-        ).log_prob(x_in).mean()
-        return mult_loss
+        if self.distribution == 'multinomial':
+            dist_loss = Multinomial(
+                logits=logp, validate_args=False  # weird ...
+            ).log_prob(x_in).mean()
+        elif self.distribution == 'gaussian':
+            # MSE loss based out on DeepMicro
+            # https://www.nature.com/articles/s41598-020-63159-5
+            dist_loss = Normal(
+                loc=logp, scale=1, validate_args=False  # weird ...
+            ).log_prob(x_in).mean()
+        else:
+            raise ValueError(
+                f'Distribution {self.distribution} is not supported.')
+        return dist_loss
 
     def impute(self, x):
         if self.transform in {'arcsine', 'clr'}:
@@ -167,6 +180,8 @@ class LinearVAE(nn.Module):
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                 # ILR transform for testing
             hx = (self.Psi @ fx.T).T              # B x D-1
+        elif self.transform == 'none':
+            hx = x
         else:
             raise ValueError(f'Unrecognzied transform {self.transform}')
         return hx
@@ -201,8 +216,11 @@ class LinearBatchVAE(LinearVAE):
     def __init__(self, input_dim, hidden_dim, latent_dim,
                  batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False, transform='arcsine',
-                 batch_norm=True, dropout=0.1):
+                 basis=None, bias=False,
+                 transform='arcsine',
+                 distribution='multinomial',
+                 batch_norm=True, dropout=0,
+                 grassmannian=True):
         """ Account for batch effects.
 
         Parameters
@@ -224,21 +242,22 @@ class LinearBatchVAE(LinearVAE):
         """
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, latent_dim,
-            init_scale, basis=basis, encoder_depth=encoder_depth,
+            init_scale=init_scale, basis=basis,
+            encoder_depth=encoder_depth,
             bias=bias, transform=transform, dropout=dropout,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm, grassmannian=grassmannian)
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         batch_prior = batch_prior
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
+        self.batch_embed = nn.Embedding(batch_dim, latent_dim)
 
     def encode(self, x, b):
         hx = self.impute(x)
-        batch_effects = self.beta(b)
-        hx = hx - batch_effects
-        z = self.encoder(hx)
+        zb = self.batch_embed(b)
+        z = self.encoder(hx) - zb
         return z
 
     def encode_marginalized(self, x, b):

@@ -22,11 +22,14 @@ def main(args):
                         basis=args.basis,
                         dropout=args.dropout,
                         bias=args.bias,
+                        tss=args.tss,
+                        distribution=args.distribution,
                         batch_norm=args.batch_norm,
                         encoder_depth=args.encoder_depth,
                         learning_rate=args.learning_rate,
                         scheduler=args.scheduler,
-                        transform=args.transform)
+                        transform=args.transform,
+                        grassmannian=args.grassmannian)
 
     print(args)
     print(model)

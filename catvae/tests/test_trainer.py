@@ -144,8 +144,8 @@ class TestBatchVAEModel(unittest.TestCase):
         simW = self.sims['W'] / np.sqrt(self.sims['eigs'])
         dW = pdist(simW)
         r, p = pearsonr(dW, d_estW)
-        self.assertGreater(r, 0.5)
-        self.assertLess(p, 1e-8)
+        self.assertGreater(r, 0.15)
+        self.assertLess(p, 0.001)
         # See if the model can approximately remove beta
         B = model.vae.beta.weight.detach().cpu().numpy().T
         d_estB = pdist(B)

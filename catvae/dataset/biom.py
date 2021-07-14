@@ -1,13 +1,9 @@
 import biom
 import math
-import logging
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-
-
-logger = logging.getLogger(__name__)
 
 
 class BiomDataset(Dataset):
@@ -26,8 +22,7 @@ class BiomDataset(Dataset):
             self,
             table: biom.Table,
             metadata: pd.DataFrame = None,
-            batch_category: str = None,
-    ):
+            batch_category: str = None):
         super(BiomDataset).__init__()
         self.table = table
         self.metadata = metadata
@@ -35,7 +30,6 @@ class BiomDataset(Dataset):
         self.populate()
 
     def populate(self):
-        logger.info("Preprocessing dataset")
 
         if self.metadata is not None:
             # match the metadata with the table
@@ -47,19 +41,16 @@ class BiomDataset(Dataset):
                 raise ValueError('`Index` must have a name either'
                                  '`sampleid`, `sample-id` or #SampleID')
             self.index_name = self.metadata.index.name
-
             self.metadata = self.metadata.reset_index()
 
         self.batch_indices = None
         if self.batch_category is not None and self.metadata is not None:
             batch_cats = np.unique(self.metadata[self.batch_category].values)
-            batch_cats = pd.Series(
+            self.batch_cats = pd.Series(
                 np.arange(len(batch_cats)), index=batch_cats)
             self.batch_indices = np.array(
-                list(map(lambda x: batch_cats.loc[x],
+                list(map(lambda x: self.batch_cats.loc[x],
                          self.metadata[self.batch_category].values)))
-
-        logger.info("Finished preprocessing dataset")
 
     def __len__(self) -> int:
         return len(self.table.ids())
@@ -103,6 +94,28 @@ class BiomDataset(Dataset):
                 yield self.__getitem__(i)
 
 
+def _sample2dict(feature_data, feature_ids, i, sample_ids=None):
+    # This is taking code from here
+    # https://github.com/qiime2/q2-sample-classifier/
+    # blob/master/q2_sample_classifier/utilities.py#L64
+    features = np.empty(1, dtype=dict)
+    row = feature_data[i]
+    features = {feature_ids[ix]: d
+                for ix, d in zip(row.indices, row.data)}
+    return features, i
+
+
+class Q2BiomDataset(BiomDataset):
+    """ This is specific to q2 sample classifiers. """
+    def __init__(self, table: biom.Table):
+        super(Q2BiomDataset).__init__()
+        self.feature_ids = table.ids('observation')
+        self.feature_data = table.matrix_data.T.tocsr()
+
+    def __getitem__(self, i):
+        return _sample2dict(self.feature_data, self.feature_ids, i)
+
+
 def collate_single_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     counts = torch.from_numpy(counts_list).float()
@@ -115,3 +128,9 @@ def collate_batch_f(batch):
     counts = torch.from_numpy(counts_list).float()
     batch_ids = torch.from_numpy(batch_ids).long()
     return counts, batch_ids.squeeze()
+
+
+def collate_q2_f(batch):
+    features = [b[0] for b in batch]
+    sample_idx = np.vstack([b[1] for b in batch])
+    return features, sample_idx.squeeze()

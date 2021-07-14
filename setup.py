@@ -37,10 +37,14 @@ setup(name='catvae',
           'pandas>=1.0.0',
           'torch>=1.8.0',
           'gneiss',
-          'geotorch>=0.2.0',
+          'geotorch>=0.1.0',
           'scikit-bio',
           'tensorboard',
           'pytorch-lightning>=1.3.1'
+          # if utilizing the qiime2 API you also need a mininum of
+          # https://github.com/qiime2/qiime2.git
+          # https://github.com/qiime2/q2-sample-classifier.git
+          # https://github.com/qiime2/q2-types.git
       ],
       classifiers=classifiers,
       package_data={},

@@ -4,18 +4,16 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
-    CosineAnnealingWarmRestarts,
-    CosineAnnealingLR
-)
-from catvae.dataset.biom import (
-    collate_single_f, BiomDataset,
-    collate_batch_f
-)
+    CosineAnnealingWarmRestarts, StepLR,
+    CosineAnnealingLR)
+from catvae.dataset.biom import BiomDataset, collate_single_f, collate_batch_f
 from catvae.models import LinearVAE, LinearBatchVAE
-from catvae.composition import (alr_basis, ilr_basis, identity_basis)
+from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
-    metric_procrustes, metric_alignment, metric_orthogonality)
+    metric_procrustes, metric_alignment,
+    # metric_orthogonality
+)
 import pytorch_lightning as pl
 
 from biom import load_table
@@ -47,6 +45,12 @@ class BiomDataModule(pl.LightningDataModule):
             self.collate_f = collate_single_f
         else:
             self.collate_f = collate_batch_f
+        # collect class mappings if they exist
+        if batch_category is not None:
+            train_dataset = BiomDataset(
+                load_table(self.train_biom),
+                metadata=self.metadata, batch_category=self.batch_category)
+            self.batch_categories = train_dataset.batch_cats
 
     def train_dataloader(self):
         train_dataset = BiomDataset(
@@ -63,8 +67,9 @@ class BiomDataModule(pl.LightningDataModule):
         val_dataset = BiomDataset(
             load_table(self.val_biom),
             metadata=self.metadata, batch_category=self.batch_category)
+        batch_size = min(len(val_dataset) - 1, self.batch_size)
         val_dataloader = DataLoader(
-            val_dataset, batch_size=self.batch_size,
+            val_dataset, batch_size=batch_size,
             collate_fn=self.collate_f, shuffle=False,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
@@ -84,9 +89,10 @@ class BiomDataModule(pl.LightningDataModule):
 
 class MultVAE(pl.LightningModule):
     def __init__(self, n_input, n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, batch_norm=False,
+                 dropout=0, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 transform='pseudocount'):
+                 transform='pseudocount', distribution='multinomial',
+                 grassmannian=True):
         super().__init__()
         # a hack to avoid the save_hyperparameters anti-pattern
         # https://github.com/PyTorchLightning/pytorch-lightning/issues/7443
@@ -97,11 +103,14 @@ class MultVAE(pl.LightningModule):
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
+            'tss': tss,
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'learning_rate': learning_rate,
             'scheduler': scheduler,
-            'transform': transform
+            'transform': transform,
+            'distribution': distribution,
+            'grassmannian': grassmannian,
         }
         basis = self.set_basis(n_input, basis)
         self.vae = LinearVAE(
@@ -112,7 +121,9 @@ class MultVAE(pl.LightningModule):
             encoder_depth=encoder_depth,
             batch_norm=batch_norm,
             dropout=dropout,
-            transform=transform)
+            distribution=distribution,
+            transform=transform,
+            grassmannian=grassmannian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -123,7 +134,7 @@ class MultVAE(pl.LightningModule):
             basis = ilr_basis(basis)
             assert basis.shape[1] == n_input, (
                 f'Basis shape {basis.shape} does '
-                f'not match tree dimension {len(n_input)}. '
+                f'not match tree dimension {n_input}. '
                 'Also make sure if your tree if aligned correctly '
                 'with `gneiss.util.match_tips`')
         elif basis == 'alr':
@@ -156,13 +167,15 @@ class MultVAE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         self.vae.train()
         counts = batch.to(self.device)
+        if self.hparams['tss']:  # only for benchmarking
+            counts = closure(counts)
         loss = self.vae(counts)
         assert torch.isnan(loss).item() is False
         if len(self.trainer.lr_schedulers) >= 1:
             lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
             current_lr = lr
         else:
-            current_lr = self.learning_rate
+            current_lr = self.hparams['learning_rate']
         tensorboard_logs = {
             'train_loss': loss, 'elbo': -loss, 'lr': current_lr
         }
@@ -172,6 +185,8 @@ class MultVAE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
             counts = batch
+            if self.hparams['tss']:  # only for benchmarking
+                counts = closure(counts)
             loss = self.vae(counts)
             assert torch.isnan(loss).item() is False
 
@@ -179,7 +194,6 @@ class MultVAE(pl.LightningModule):
             rec_err = self.vae.get_reconstruction_loss(batch)
             tensorboard_logs = {'val_loss': loss,
                                 'val_rec_err': rec_err}
-
             # log the learning rate
             return {'val_loss': loss, 'log': tensorboard_logs}
 
@@ -192,15 +206,24 @@ class MultVAE(pl.LightningModule):
         rec_err = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_rec_err',
                                           rec_err, self.global_step)
-        ortho, eig_err = metric_orthogonality(self.vae)
-        self.logger.experiment.add_scalar('orthogonality',
-                                          ortho, self.global_step)
 
-        tensorboard_logs = dict(
-            [('val_loss', rec_err),
-             ('orthogonality', ortho),
-             ('eigenvalue-error', eig_err)]
-        )
+        loss_f = lambda x: x['log']['val_loss']
+        losses = list(map(loss_f, outputs))
+        loss = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val_loss',
+                                          loss, self.global_step)
+        self.log('val_loss', loss)
+
+        # Commenting out, since it is too slow...
+        # ortho, eig_err = metric_orthogonality(self.vae)
+        # self.logger.experiment.add_scalar('orthogonality',
+        #                                   ortho, self.global_step)
+        # tensorboard_logs = dict(
+        #     [('val_loss', loss),
+        #      ('orthogonality', ortho),
+        #      ('eigenvalue-error', eig_err)]
+        # )
+        tensorboard_logs = {'val_loss': loss, 'val_rec_error': rec_err}
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
             ms = metric_subspace(self.vae, self.gt_eigvectors, self.gt_eigs)
@@ -218,20 +241,23 @@ class MultVAE(pl.LightningModule):
                 'alignment', ma, self.global_step)
             tensorboard_logs = {**tensorboard_logs, **tlog}
 
-        return {'val_loss': rec_err, 'log': tensorboard_logs}
+        return {'val_loss': loss, 'log': tensorboard_logs}
 
     def test_epoch_end(self, outputs):
         pass
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.vae.parameters(), lr=self.hparams['learning_rate'])
+        optimizer = torch.optim.AdamW(
+            self.vae.parameters(), lr=self.hparams['learning_rate'],
+            weight_decay=0)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=2, T_mult=2)
         elif self.hparams['scheduler'] == 'cosine':
             scheduler = CosineAnnealingLR(
                 optimizer, T_max=10)
+        elif self.hparams['scheduler'] == 'steplr':
+            scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
         elif self.hparams['scheduler'] == 'none':
             return [optimizer]
         else:
@@ -258,13 +284,20 @@ class MultVAE(pl.LightningModule):
             required=False, type=int, default=64)
         parser.add_argument(
             '--dropout', help='Dropout probability',
-            required=False, type=float, default=0.1)
+            required=False, type=float, default=0)
         parser.add_argument('--bias', dest='bias', action='store_true')
         parser.add_argument('--no-bias', dest='bias', action='store_false')
+        # https://stackoverflow.com/a/15008806/1167475
+        parser.set_defaults(bias=True)
+        parser.add_argument('--tss', dest='tss', action='store_true',
+                            help=('Total sum scaling to convert counts '
+                                  'to proportions.  This option is highly '
+                                  'recommended against and will not be '
+                                  'supported in the future.'))
+        parser.set_defaults(tss=False)
         parser.add_argument('--batch-norm', dest='batch_norm',
                             action='store_true')
-        parser.add_argument('--no-batch-norm', dest='batch_norm',
-                            action='store_false')
+        parser.set_defaults(batch_norm=False)
         parser.add_argument(
             '--encoder-depth', help='Number of encoding layers.',
             required=False, type=int, default=1)
@@ -275,6 +308,18 @@ class MultVAE(pl.LightningModule):
             '--transform', help=('Specifies transform for preprocessing '
                                  '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
+        parser.add_argument(
+            '--no-grassmannian',
+            help=('Specifies if grassmanian manifold optimization '
+                  'is disabled. Turning this off will remove unit norm '
+                  'constraint on decoder weights. '),
+            required=False, dest='grassmanian', action='store_false')
+        parser.set_defaults(grassmannian=True)
+        parser.add_argument(
+            '--distribution',
+            help=('Specifies decoder distribution, either '
+                  '`multinomial` or `gaussian`.'),
+            required=False, type=str, default='multinomial')
         parser.add_argument(
             '--scheduler',
             help=('Learning rate scheduler '
@@ -287,13 +332,15 @@ class MultVAE(pl.LightningModule):
 class MultBatchVAE(MultVAE):
     def __init__(self, n_input, batch_prior, n_batches,
                  n_latent=32, n_hidden=64, basis=None,
-                 dropout=0.5, bias=True, batch_norm=False,
-                 encoder_depth=1, learning_rate=0.001, scheduler='cosine',
-                 transform='pseudocount'):
-        super().__init__(n_input, n_latent, n_hidden, basis,
-                         dropout, bias, batch_norm,
-                         encoder_depth, learning_rate, scheduler,
-                         transform)
+                 dropout=0, bias=True, batch_norm=False,
+                 encoder_depth=1, learning_rate=0.001, vae_lr=0.001,
+                 scheduler='cosine', distribution='multinomial',
+                 transform='pseudocount', grassmannian=True):
+        super().__init__(n_input, n_latent, n_hidden, basis=basis,
+                         dropout=dropout, bias=bias, batch_norm=batch_norm,
+                         encoder_depth=encoder_depth,
+                         learning_rate=learning_rate, scheduler=scheduler,
+                         transform=transform)
         self._hparams = {
             'n_input': n_input,
             'n_latent': n_latent,
@@ -306,8 +353,11 @@ class MultBatchVAE(MultVAE):
             'n_batches': n_batches,
             'batch_prior': batch_prior,
             'learning_rate': learning_rate,
+            'vae_lr': vae_lr,
             'scheduler': scheduler,
+            'distribution': distribution,
             'transform': transform,
+            'grassmannian': grassmannian
         }
         self.gt_eigvectors = None
         self.gt_eigs = None
@@ -318,22 +368,24 @@ class MultBatchVAE(MultVAE):
         batch_prior = batch_prior.reshape(1, -1).squeeze()
         batch_prior = torch.Tensor(batch_prior).float()
         basis = self.set_basis(n_input, basis)
-
         self.vae = LinearBatchVAE(
             n_input,
             hidden_dim=n_hidden,
             latent_dim=n_latent,
             batch_dim=n_batches,
+            batch_norm=batch_norm,
             batch_prior=batch_prior,
             basis=basis,
             encoder_depth=encoder_depth,
             bias=bias,
-            transform=transform)
+            distribution=distribution,
+            transform=transform,
+            grassmannian=grassmannian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
     def initialize_batch(self, beta):
-        # apparently this is not recommended, but fuck it
+        # apparently this is not recommended, but whatev
         self.vae.beta.weight.data = beta.data
         self.vae.beta.requires_grad = False
         self.vae.beta.weight.requires_grad = False
@@ -345,7 +397,19 @@ class MultBatchVAE(MultVAE):
         self.vae.decoder.weight.requires_grad = False
 
     def to_latent(self, X, b):
-        """ Casts to latent space
+        """ Casts to latent space using predicted batch probabilities.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+           Counts of interest (N x D)
+        b : torch.Tensor
+           Batch membership (N)
+        """
+        return self.vae.encode(X, b)
+
+    def to_latent_marginalized(self, X, b):
+        """ Casts to latent space using predicted batch probabilities.
 
         Parameters
         ----------
@@ -379,12 +443,12 @@ class MultBatchVAE(MultVAE):
     def configure_optimizers(self):
         encode_params = self.vae.encoder.parameters()
         decode_params = self.vae.decoder.parameters()
-        opt_g = torch.optim.Adam(
+        opt_g = torch.optim.AdamW(
             list(encode_params) + list(decode_params),
-            lr=self.hparams['learning_rate'])
-        opt_b = torch.optim.Adam(
+            lr=self.hparams['vae_lr'], weight_decay=0)
+        opt_b = torch.optim.AdamW(
             list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
-            lr=self.hparams['learning_rate'])
+            lr=self.hparams['learning_rate'], weight_decay=0.001)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
                 opt_g, T_0=2, T_mult=2)
@@ -430,6 +494,7 @@ class MultBatchVAE(MultVAE):
             rec_err = sum(losses) / len(losses)
             self.logger.experiment.add_scalar(
                 m, rec_err, self.global_step)
+            self.log(m, rec_err)
             tensorboard_logs[m] = rec_err
 
         if (self.gt_eigvectors is not None) and (self.gt_eigs is not None):
@@ -459,6 +524,14 @@ class MultBatchVAE(MultVAE):
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=True, type=str, default=None)
+        parser.add_argument(
+            '--load-vae-weights',
+            help=('Pre-trained linear VAE weights.'),
+            required=False, type=str, default=None)
+        parser.add_argument(
+            '--vae-lr',
+            help=('Learning rate of VAE weights'),
+            required=False, type=float, default=1e-3)
         return parser
 
 
@@ -479,13 +552,17 @@ def add_data_specific_args(parent_parser, add_help=True):
         help='Sample metadata column for batch effects.',
         required=False, type=str, default=None)
     parser.add_argument(
+        '--class-category',
+        help='Sample metadata column for class predictions.',
+        required=False, type=str, default=None)
+    parser.add_argument(
         '--batch-size', help='Training batch size',
         required=False, type=int, default=32)
     # Arguments specific for trainer
     parser.add_argument(
         '--epochs', help='Training batch size',
         required=False, type=int, default=100)
-    parser.add_argument('--num-workers', type=int)
+    parser.add_argument('--num-workers', type=int, default=1)
     parser.add_argument('--gpus', type=int)
     parser.add_argument('--profile', type=bool, default=False)
     parser.add_argument('--grad-clip', type=int, default=10)

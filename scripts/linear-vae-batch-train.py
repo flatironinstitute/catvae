@@ -2,7 +2,8 @@ import os
 import argparse
 import numpy as np
 import pandas as pd
-from catvae.trainer import MultBatchVAE, BiomDataModule, add_data_specific_args
+from catvae.trainer import (MultVAE, MultBatchVAE, BiomDataModule,
+                            add_data_specific_args)
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
@@ -34,8 +35,18 @@ def main(args):
             batch_norm=args.batch_norm,
             encoder_depth=args.encoder_depth,
             learning_rate=args.learning_rate,
+            vae_lr=args.vae_lr,
             scheduler=args.scheduler,
-            transform=args.transform)
+            transform=args.transform,
+            grassmannian=args.grassmannian)
+        if args.load_vae_weights is not None:
+            # initialize encoder/decoder weights with pretrained VAE
+            other_model = MultVAE.load_from_checkpoint(args.load_vae_weights)
+            model.vae.encoder = other_model.vae.encoder
+            model.vae.decoder = other_model.vae.decoder
+            model.vae.log_sigma_sq = other_model.vae.log_sigma_sq
+            model.vae.variational_logvars = other_model.vae.variational_logvars
+            # Note that input_embed isn't handled here.
 
     print(args)
     print(model)
@@ -67,6 +78,9 @@ def main(args):
     # save hyper-parameters to yaml file
     with open(f'{args.output_directory}/hparams.yaml', 'w') as outfile:
         yaml.dump(model._hparams, outfile, default_flow_style=False)
+    # save batch class mappings
+    dm.batch_categories.to_csv(
+        f'{args.output_directory}/batch_categories.txt', sep='\t', header=None)
     # save tree to file if specified
     if os.path.exists(args.basis):
         tree = TreeNode.read(args.basis)
