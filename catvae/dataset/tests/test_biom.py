@@ -63,8 +63,7 @@ class TestQ2BiomDataset(unittest.TestCase):
         ])
         ids = list(map(str, range(len(exp_sample))))
         exp_sample = dict(zip(ids, exp_sample))
-        print(features)
-        self.assertDictEqual(exp_sample, features[0][0])
+        self.assertDictEqual(exp_sample, features[0])
 
 
 if __name__ == '__main__':
