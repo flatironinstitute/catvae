@@ -62,6 +62,12 @@ X_embed = vae_model.to_latent(
         torch.Tensor(X_train).float()).detach().cpu().numpy()
 ```
 
+You can also sample from these embeddings. Below is an example of how you would do that.
+```python
+x = X_train[0, :]
+vae_model.sample(x)
+```
+
 If you want to obtain a CLR representation of the VAE decoder loadings, it can be done as follows
 ```python
 import pandas as pd
