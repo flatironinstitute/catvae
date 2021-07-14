@@ -1,12 +1,11 @@
 import os
 import argparse
-import numpy as np
 import scvi
-from catvae.trainer import MultVAE, BiomDataModule, add_data_specific_args
+from catvae.trainer import MultVAE, add_data_specific_args
 from biom import load_table
-from skbio import TreeNode
 import yaml
 import pandas as pd
+
 
 # This is derived from the scvi notebook
 # https://github.com/YosefLab/scvi-tutorials/blob/master/linear_decoder.ipynb
@@ -20,7 +19,7 @@ def main(args):
     metadata = metadata.set_index(index_name)
 
     train_biom = load_table(args.train_biom)
-    test_biom = load_table(args.test_biom)
+    # test_biom = load_table(args.test_biom)
     valid_biom = load_table(args.val_biom)
     # looks like we can't specify splits
     # so we'll just combined train/validate tables
@@ -29,23 +28,23 @@ def main(args):
     D, _ = t.shape
 
     obs_md = {i: {'taxonomy': 'None'} for i in t.ids(axis='observation')}
-    sample_md = {i: {'batch': v} for i, v in zip(t.ids(), metadata.loc[t.ids(), args.batch_category].values)}
+    batch_cats = metadata.loc[t.ids(), args.batch_category].values
+    sample_md = {i: {'batch': v} for i, v in zip(t.ids(), batch_cats)}
     t.add_metadata(sample_md, axis='sample')
     t.add_metadata(obs_md, axis='observation')
 
     # careful here, this requires at least biom 2.1.10
     # https://github.com/biocore/biom-format/pull/845
     adata = t.to_anndata()
-    adata.layers["counts"] = adata.X.copy() # preserve counts
+    adata.layers["counts"] = adata.X.copy()  # preserve counts
     scvi.data.setup_anndata(adata, layer="counts", batch_key="batch")
-
     model = scvi.model.LinearSCVI(
         adata, dropout_rate=args.dropout,
         n_latent=args.n_latent, n_layers=args.encoder_depth,
         n_hidden=args.n_hidden)
     print(model)
     model.train(max_epochs=args.epochs,
-                plan_kwargs={'lr':args.learning_rate},
+                plan_kwargs={'lr': args.learning_rate},
                 check_val_every_n_epoch=50)
 
     args = argparse.Namespace()
@@ -53,7 +52,7 @@ def main(args):
     os.mkdir(args.output_directory)
     with open(f'{args.output_directory}/hparams.yaml', 'w') as outfile:
         yaml.dump(hparams, outfile, default_flow_style=False)
-    path = f'{args.output_directory}/{last_ckpt.pt}'
+    path = f'{args.output_directory}/last_ckpt.pt'
     model.save(path, save_anndata=True)
     # this model can be loaded via
     # model = scvi.model.LinearSCVI.load(path)
