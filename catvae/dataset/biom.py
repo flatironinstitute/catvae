@@ -116,20 +116,6 @@ class Q2BiomDataset(BiomDataset):
         return _sample2dict(self.feature_data, self.feature_ids, i)
 
 
-def _get_triplet(G, category):
-    """ Picks triplets based on class assignments. """
-    i = np.random.randint(len(G))
-    c = G.iloc[i][category]
-    idx = G[category] == c
-    yesC = G.loc[idx]
-    notC = G.loc[~idx]
-    j = np.random.randint(len(yesC))
-    while G.index[i] == yesC.index[j]:
-        j = np.random.randint(len(yesC))
-    k = np.random.randint(len(notC))
-    return G.index[i], yesC.index[j], notC.index[k]
-
-
 def collate_single_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     counts = torch.from_numpy(counts_list).float()
