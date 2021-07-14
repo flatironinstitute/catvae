@@ -3,7 +3,7 @@ from skbio.util import get_data_path
 from biom import load_table
 import pandas as pd
 import numpy as np
-from catvae.dataset.biom import BiomDataset, TripletDataset, Q2BiomDataset
+from catvae.dataset.biom import BiomDataset, Q2BiomDataset
 from catvae.dataset.biom import collate_q2_f
 
 import numpy.testing as npt
@@ -29,21 +29,6 @@ class TestBiomDataset(unittest.TestCase):
         batch = data[0]
         npt.assert_allclose(batch[0], exp_sample)
         npt.assert_allclose(batch[1], np.array(0))
-
-
-class TestTripleDataset(unittest.TestCase):
-    def setUp(self):
-        self.table = load_table(get_data_path('table.biom'))
-        self.metadata = pd.read_table(get_data_path('metadata.txt'),
-                                      index_col=0)
-
-    def test_biom_getitem(self):
-        np.random.seed(0)
-        data = TripletDataset(self.table, self.metadata,
-                              batch_category='batch',
-                              class_category='treatment')
-        batch = data[0]
-        self.assertEqual(len(batch), 6)
 
 
 class TestQ2BiomDataset(unittest.TestCase):
