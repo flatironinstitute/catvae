@@ -44,9 +44,14 @@ from gneiss.util import match_tips
 # Load model files
 vae_model_path = 'catvae-mouse-z128-l5-deblur'
 ckpt_path = os.path.join(vae_model_path, 'last_ckpt.pt')
-nwk_path = os.path.join(vae_model_path, 'tree.nwk')
-params = os.path.join(vae_model_path, 'hparams.yaml')
-tree = skbio.TreeNode(f'{vae_model_path}/tree.nwk')
+params = os.path.join(vae_model_path, 'hparams.yaml')    
+nwk_path = os.path.join(vae_model_path, 'tree.nwk')  
+tree = skbio.TreeNode(nwk_path)
+with open(params, 'r') as stream:   
+    params = yaml.safe_load(stream)     
+params['basis'] = nwk_path
+vae_model = MultVAE.load_from_checkpoint(ckpt_path, **params)
+
 # Load your dataset
 X_train = biom.load_table('<your biom table>')
 # Align your data against the VAE
