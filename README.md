@@ -23,15 +23,30 @@ The development branch of catvae can be installed via
 pip install git+https://github.com/flatironinstitute/catvae.git
 ```
 
-## Downloading models
+## Downloading pretrained models
 
-The pretrained Mouse VAE can be found [here](https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur.tar.gz), and can be downloaded via
+[Pretrained Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur.tar.gz
 tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
 ```
+[Pretrained Batch corrected Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur-batch.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur-batch.tar.gz
+tar -zxvf catvae-mouse-z128-l5-deblur-batch.tar.gz
+```
+[Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-deblur.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur.tar.gz
+tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
+```
+[Pretrained Batch corrected Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-deblur-batch.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur-batch.tar.gz
+tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
+```
 
-## Loading models
+## Loading VAE models
 
 When processing your own data, it is important to note that you can only perform inference on the microbes that have been observed by the VAE.  As a result, it is critical that your data is completely aligned with the VAE. Loading the VAE model and aligning your data against the VAE can be done as follows
 
@@ -40,6 +55,7 @@ import torch
 import biom
 from skbio
 from gneiss.util import match_tips
+from catvae.trainer import MultVAE 
 
 # Load model files
 vae_model_path = 'catvae-mouse-z128-l5-deblur'
@@ -83,6 +99,43 @@ W = vae_model.vae.decoder.weight.detach().numpy()
 # CLR representation of the VAE decoder loadings
 names = [n.name for n in tree.tips()]
 cW = pd.DataFrame(Psi.T @ W, index=names)
+```
+
+## Loading Batch corrected VAE models
+
+The process is almost identical
+```python
+import torch
+import biom
+from skbio
+from gneiss.util import match_tips
+from catvae.trainer import MultBatchVAE 
+
+# Load model files
+vae_model_path = 'catvae-mouse-z128-l5-deblur-batch'
+ckpt_path = os.path.join(vae_model_path, 'last_ckpt.pt')
+params = os.path.join(vae_model_path, 'hparams.yaml')    
+nwk_path = os.path.join(vae_model_path, 'tree.nwk')  
+tree = skbio.TreeNode(nwk_path)
+with open(params, 'r') as stream:   
+    params = yaml.safe_load(stream)     
+params['basis'] = nwk_path
+vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path, **params)
+
+# Load your dataset
+X_train = biom.load_table('<your biom table>')
+# Align your data against the VAE
+X_train, tree = match_tips(X_train, tree)
+```
+Extracting latent representations and sampling is slightly different since the batch information needs to be specified.
+All of the batch names are under the `batch_categories.txt` file, but the model only takes numerical ids as shown in the first column.
+```
+batch_num = <your specified batch>
+X_embed = vae_model.to_latent(
+        torch.Tensor(X_train).float(), batch_num).detach().cpu().numpy()
+        
+x = X_train[0, :]
+vae_model.sample(x, batch_num)
 ```
 
 ## Training the VAE models
