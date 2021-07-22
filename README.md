@@ -129,7 +129,7 @@ X_train, tree = match_tips(X_train, tree)
 ```
 Extracting latent representations and sampling is slightly different since the batch information needs to be specified.
 All of the batch names are under the `batch_categories.txt` file, but the model only takes numerical ids as shown in the first column.
-```
+```python
 batch_num = <your specified batch>
 X_embed = vae_model.to_latent(
         torch.Tensor(X_train).float(), batch_num).detach().cpu().numpy()
