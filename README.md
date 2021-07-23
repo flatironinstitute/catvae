@@ -6,7 +6,7 @@ Categorical Variational Autoencoders
 Variational Autoencoders (VAE) are one of the state-of-the-art methods applying neural networks to perform Bayesian inference to estimate complex high dimensional distributions, with recent techniques showing that Linear VAEs are mathematically equivalent to Principal Components Analysis.
 
 
-Categorical Variational Autoencoders or Multinomial Variational Autoencoders are extentions of VAEs applied to count data.  These methods can estimate the moments of the Multinomial Logistic Normal on distribution with thousands of dimensions and thousands of observations in the matter of hours.
+Categorical Variational Autoencoders or Multinomial Variational Autoencoders are extentions of VAEs applied to count data.  These methods can estimate the moments of the Multinomial Logistic Normal distribution with thousands of dimensions and thousands of observations in the matter of hours.
 
 # Getting started
 
