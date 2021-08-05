@@ -7,7 +7,8 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR,
     CosineAnnealingLR)
 from catvae.dataset.biom import BiomDataset, collate_single_f, collate_batch_f
-from catvae.models import LinearVAE, LinearBatchVAE
+#from catvae.models import LinearVAE, LinearBatchVAE
+from catvae.models import LinearDLRVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
@@ -113,7 +114,7 @@ class MultVAE(pl.LightningModule):
             'grassmannian': grassmannian,
         }
         basis = self.set_basis(n_input, basis)
-        self.vae = LinearVAE(
+        self.vae = LinearDLRVAE(
             n_input, basis=basis,
             hidden_dim=n_hidden,
             latent_dim=n_latent,
