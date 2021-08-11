@@ -7,6 +7,6 @@ from catvae.models.batch_classifier import Q2BatchClassifier
 
 
 __all__ = ['LinearCatVAE', 'LinearBatchCatVAE',
-           'LinearVAE',  'LinearDLRVAE',
+           'LinearVAE', 'LinearDLRVAE',
            'LinearBatchVAE',
            'Q2BatchClassifier']

@@ -7,7 +7,8 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR,
     CosineAnnealingLR)
 from catvae.dataset.biom import BiomDataset, collate_single_f, collate_batch_f
-#from catvae.models import LinearVAE, LinearBatchVAE
+# from catvae.models import LinearVAE,
+from catvae.models import LinearBatchVAE
 from catvae.models import LinearDLRVAE
 from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
