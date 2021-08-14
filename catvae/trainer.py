@@ -443,13 +443,11 @@ class MultBatchVAE(MultVAE):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        encode_params = self.vae.encoder.parameters()
-        decode_params = self.vae.decoder.parameters()
         opt_g = torch.optim.AdamW(
-            list(encode_params) + list(decode_params),
+            self.vae.pretrained_parameters(),
             lr=self.hparams['vae_lr'], weight_decay=0)
         opt_b = torch.optim.AdamW(
-            list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
+            self.vae.batch_parameters(),
             lr=self.hparams['learning_rate'], weight_decay=0.001)
         if self.hparams['scheduler'] == 'cosine_warm':
             scheduler = CosineAnnealingWarmRestarts(
