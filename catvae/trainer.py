@@ -332,9 +332,9 @@ class MultVAE(pl.LightningModule):
 
 # Batch correction methods
 class MultBatchVAE(MultVAE):
-    def __init__(self, n_input, batch_prior, n_batches,
-                 n_latent=32, n_hidden=64, basis=None,
-                 dropout=0, bias=True, batch_norm=False,
+    def __init__(self, n_input, n_batches, n_latent=32, n_hidden=64,
+                 beta_prior=None, gam_prior=None, phi_prior=None,
+                 basis=None, dropout=0, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, vae_lr=0.001,
                  scheduler='cosine', distribution='multinomial',
                  transform='pseudocount', grassmannian=True):
@@ -347,6 +347,9 @@ class MultBatchVAE(MultVAE):
             'n_input': n_input,
             'n_latent': n_latent,
             'n_hidden': n_hidden,
+            'beta_prior' : beta_prior,
+            'gam_prior' : gam_prior,
+            'phi_prior' : phi_prior,
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
@@ -364,11 +367,11 @@ class MultBatchVAE(MultVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-        batch_prior = pd.read_table(batch_prior, dtype=str)
-        batch_prior = batch_prior.set_index(batch_prior.columns[0])
-        batch_prior = batch_prior.values.astype(np.float64)
-        batch_prior = batch_prior.reshape(1, -1).squeeze()
-        batch_prior = torch.Tensor(batch_prior).float()
+        beta_prior = pd.read_table(beta_prior, dtype=str)
+        beta_prior = beta_prior.set_index(beta_prior.columns[0])
+        beta_prior = beta_prior.values.astype(np.float64)
+        beta_prior = beta_prior.reshape(1, -1).squeeze()
+        beta_prior = torch.Tensor(beta_prior).float()
         basis = self.set_basis(n_input, basis)
         self.vae = LinearBatchVAE(
             n_input,
@@ -376,7 +379,9 @@ class MultBatchVAE(MultVAE):
             latent_dim=n_latent,
             batch_dim=n_batches,
             batch_norm=batch_norm,
-            batch_prior=batch_prior,
+            beta_prior=beta_prior,
+            gam_prior=torch.Tensor([gam_prior]),
+            phi_prior=torch.Tensor([phi_prior]),
             basis=basis,
             encoder_depth=encoder_depth,
             bias=bias,
