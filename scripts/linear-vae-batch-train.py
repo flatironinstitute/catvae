@@ -23,12 +23,21 @@ def main(args):
         sample_metadata = sample_metadata.set_index(sample_metadata.columns[0])
         sample_metadata = sample_metadata.loc[table.ids()]
         n_batches = len(sample_metadata[args.batch_category].value_counts())
+
+        beta_prior = pd.read_table(args.beta_prior, dtype=str)
+        beta_prior = beta_prior.set_index(beta_prior.columns[0])
+        beta_prior = beta_prior.values.astype(np.float64)
+        beta_prior = beta_prior.reshape(1, -1).squeeze()
+        beta_prior = torch.Tensor(beta_prior).float()
+
         model = MultBatchVAE(
             n_input,
-            args.batch_prior,
             n_batches,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
+            beta_prior=args.beta_prior,
+            gam_prior=torch.Tensor([args.gam_prior]),
+            phi_prior=torch.Tensor([args.phi_prior]),
             basis=args.basis,
             dropout=args.dropout,
             bias=args.bias,

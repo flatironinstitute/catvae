@@ -356,7 +356,6 @@ class MultBatchVAE(MultVAE):
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'n_batches': n_batches,
-            'batch_prior': batch_prior,
             'learning_rate': learning_rate,
             'vae_lr': vae_lr,
             'scheduler': scheduler,
@@ -367,11 +366,6 @@ class MultBatchVAE(MultVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-        beta_prior = pd.read_table(beta_prior, dtype=str)
-        beta_prior = beta_prior.set_index(beta_prior.columns[0])
-        beta_prior = beta_prior.values.astype(np.float64)
-        beta_prior = beta_prior.reshape(1, -1).squeeze()
-        beta_prior = torch.Tensor(beta_prior).float()
         basis = self.set_basis(n_input, basis)
         self.vae = LinearBatchVAE(
             n_input,
@@ -439,7 +433,7 @@ class MultBatchVAE(MultVAE):
         batch_ids = batch_ids.to(self.device)
         self.vae.train()
         losses = self.vae(counts, batch_ids)
-        loss, recon_loss, kl_div_z, kl_div_b = losses
+        loss, recon_loss, kl_div_z, kl_div_b, _ = losses
         assert torch.isnan(loss).item() is False
         tensorboard_logs = {
             'lr': current_lr, 'train_loss': loss
@@ -475,7 +469,7 @@ class MultBatchVAE(MultVAE):
             counts = counts.to(self.device)
             batch_ids = batch_ids.to(self.device)
             losses = self.vae(counts, batch_ids)
-            loss, rec_err, kl_div_z, kl_div_b = losses
+            loss, rec_err, kl_div_z, kl_div_b, _ = losses
             assert torch.isnan(loss).item() is False
             # Record the actual loss.
             tensorboard_logs = {'val_loss': loss,
@@ -525,10 +519,18 @@ class MultBatchVAE(MultVAE):
         parser = MultVAE.add_model_specific_args(
             parent_parser, add_help=add_help)
         parser.add_argument(
-            '--batch-prior',
+            '--beta-prior',
             help=('Pre-learned batch effect priors'
                   '(must have same number of dimensions as `train-biom`)'),
             required=True, type=str, default=None)
+        parser.add_argument(
+            '--gam-prior',
+            help=('Alpha parameter of Gamma prior for batch overdispersion'),
+            required=True, type=float, default=0.17)
+        parser.add_argument(
+            '--phi-prior',
+            help=('Beta parameter of Gamma prior for batch overdispersion'),
+            required=True, type=float, default=0.08)
         parser.add_argument(
             '--load-vae-weights',
             help=('Pre-trained linear VAE weights.'),

@@ -5,6 +5,7 @@ from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
 from torch.distributions import Multinomial, Normal, Gamma
 from torch.distributions.kl import kl_divergence
+import torch.nn.functional as F
 import numpy as np
 import geotorch
 
@@ -300,7 +301,7 @@ class LinearBatchVAE(LinearVAE):
         self.ilr_dim = input_dim - 1
         # define batch priors
         self.register_buffer('bpr', beta_prior)
-        self.register_buffer('glr', gam_prior)
+        self.register_buffer('gpr', gam_prior)
         self.register_buffer('ppr', phi_prior)
         # define batch posterior vars
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
@@ -364,14 +365,19 @@ class LinearBatchVAE(LinearVAE):
 
     def forward(self, x, b):
         z_mean = self.encode(x, b)
+        gam = F.softplus(self.loggamma(b), beta=0.1)
+        phi = F.softplus(self.logphi(b), beta=0.1)
         qz = Normal(z_mean, torch.exp(0.5 * self.variational_logvars))
         ql = Normal(0, torch.exp(0.5 * self.log_sigma_sq))
-        qb = Normal(self.beta(b), torch.exp(0.5 * self.beta_logvars))
-        qS = Gamma(torch.exp(self.loggamma), torch.exp(self.logphi))
+        qb = Normal(self.beta(b), torch.exp(0.5 * self.beta_logvars(b)))
+        qS = Gamma(gam, phi)
+        # draw differentiable MC samples
         z_sample = qz.rsample()
         b_sample = rnormalgamma(qb, qS)
         l_sample = ql.rsample()
+        # compute KL divergence + reconstruction loss
         x_out = self.decoder(z_sample) + b_sample + l_sample
+        zb = torch.zeros_like(self.bpr)
         kl_div_z = kl_divergence(qz, Normal(0, 1)).mean(0).sum()
         kl_div_b = kl_divergence(qb, Normal(0, self.bpr)).mean(0).sum()
         kl_div_S = kl_divergence(qS, Gamma(self.gpr, self.ppr)).mean(0).sum()
