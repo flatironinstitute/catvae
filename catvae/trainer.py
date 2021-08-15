@@ -112,7 +112,7 @@ class MultVAE(pl.LightningModule):
             'scheduler': scheduler,
             'transform': transform,
             'distribution': distribution,
-            'grassmannian': grassmannian,
+            'grassmannian': grassmannian
         }
         basis = self.set_basis(n_input, basis)
         self.vae = LinearDLRVAE(

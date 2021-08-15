@@ -3,7 +3,7 @@ import torch.nn as nn
 from catvae.composition import closure
 from gneiss.cluster import random_linkage
 from gneiss.balances import sparse_balance_basis
-from torch.distributions import Multinomial, Normal
+from torch.distributions import Multinomial, Normal, Gamma
 from torch.distributions.kl import kl_divergence
 import numpy as np
 import geotorch
@@ -20,6 +20,14 @@ def get_basis(input_dim, basis=None):
         indices.copy(), basis.data.astype(np.float32).copy(),
         requires_grad=False).coalesce()
     return Psi
+
+
+def rnormalgamma(mu_dist : Normal, std_dist : Gamma):
+    mu = mu_dist.rsample()
+    prec = std_dist.rsample()
+    std = torch.sqrt(1 / prec)
+    eps = torch.normal(torch.zeros_like(std), 1.0)
+    return mu + std * eps
 
 
 class ArcsineEmbed(nn.Module):
@@ -250,8 +258,8 @@ class LinearDLRVAE(LinearVAE):
 
 
 class LinearBatchVAE(LinearVAE):
-    def __init__(self, input_dim, hidden_dim, latent_dim,
-                 batch_dim, batch_prior,
+    def __init__(self, input_dim, hidden_dim, latent_dim, batch_dim,
+                 beta_prior, gam_prior, phi_prior,
                  init_scale=0.001, encoder_depth=1,
                  basis=None, bias=True,
                  transform='pseudocount',
@@ -270,9 +278,13 @@ class LinearBatchVAE(LinearVAE):
            Number of hidden dimensions within latent space
         batch_dim : int
            Number of batches (i.e. studies) to do batch correction
-        batch_prior : np.array of float
+        beta_prior : np.array of float
            Normal variance priors for batch effects of shape D - 1.
            Note that these priors are assumed to be in ILR coordinates.
+        gam_prior : np.array of float
+           Alpha for Gamma prior on batch over-dispersion.
+        phi_prior : np.array of float
+           Beta for Gamma prior on batch over-dispersion.
         transform : str
            Choice of input transform.  Can choose from
            arcsine, pseudocount and rclr (TODO).
@@ -286,22 +298,30 @@ class LinearBatchVAE(LinearVAE):
         self.log_sigma_sq = nn.Parameter(torch.ones(input_dim - 1))
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
-        batch_prior = batch_prior
-        self.register_buffer('batch_prior', batch_prior)
-        self.batch_logvars = nn.Embedding(batch_dim, self.ilr_dim)
+        # define batch priors
+        self.register_buffer('bpr', beta_prior)
+        self.register_buffer('glr', gam_prior)
+        self.register_buffer('ppr', phi_prior)
+        # define batch posterior vars
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
+        self.beta_logvars = nn.Embedding(batch_dim, self.ilr_dim)
+        self.loggamma = nn.Embedding(batch_dim, self.ilr_dim)
+        self.logphi = nn.Embedding(batch_dim, self.ilr_dim)
+        # define encoder batch vars
         self.batch_embed = nn.Embedding(batch_dim, latent_dim)
 
     def pretrained_parameters(self):
         params = list(self.encoder.parameters())
         params += list(self.decoder.parameters())
-        params += [self.log_sigma_sq]
+        params += [self.log_sigma_sq, self.variational_logvars]
         return params
 
     def batch_parameters(self):
         params = list(self.beta.parameters())
+        params += list(self.beta_logvars.parameters())
+        params += list(self.loggamma.parameters())
+        params += list(self.logphi.parameters())
         params += list(self.batch_embed.parameters())
-        params += list(self.batch_logvars.parameters())
         return params
 
     def encode(self, x, b):
@@ -344,22 +364,21 @@ class LinearBatchVAE(LinearVAE):
 
     def forward(self, x, b):
         z_mean = self.encode(x, b)
-        batch_effects = self.beta(b)
         qz = Normal(z_mean, torch.exp(0.5 * self.variational_logvars))
-        qb = Normal(batch_effects, torch.exp(0.5 * self.batch_logvars(b)))
         ql = Normal(0, torch.exp(0.5 * self.log_sigma_sq))
-
+        qb = Normal(self.beta(b), torch.exp(0.5 * self.beta_logvars))
+        qS = Gamma(torch.exp(self.loggamma), torch.exp(self.logphi))
         z_sample = qz.rsample()
-        b_sample = qb.rsample()
+        b_sample = rnormalgamma(qb, qS)
         l_sample = ql.rsample()
-
         x_out = self.decoder(z_sample) + b_sample + l_sample
         kl_div_z = kl_divergence(qz, Normal(0, 1)).mean(0).sum()
-        kl_div_b = kl_divergence(qb, Normal(0, self.batch_prior)).mean(0).sum()
+        kl_div_b = kl_divergence(qb, Normal(0, self.bpr)).mean(0).sum()
+        kl_div_S = kl_divergence(qS, Gamma(self.gpr, self.ppr)).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
-        elbo = kl_div_z + kl_div_b + recon_loss
+        elbo = kl_div_z + kl_div_b + kl_div_S + recon_loss
         loss = - elbo
-        return loss, -recon_loss, -kl_div_z, -kl_div_b
+        return loss, -recon_loss, -kl_div_z, -kl_div_b, -kl_div_S
 
     def get_reconstruction_loss(self, x, b):
         z_mean = self.encode(x, b)
