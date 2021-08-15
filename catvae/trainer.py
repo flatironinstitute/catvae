@@ -453,14 +453,14 @@ class MultBatchVAE(MultVAE):
                 opt_g, T_0=2, T_mult=2)
         elif self.hparams['scheduler'] == 'cosine':
             scheduler = CosineAnnealingLR(
-                opt_g, T_max=10)
+                opt_g, T_max=11)
         elif self.hparams['scheduler'] == 'none':
             return [opt_g, opt_b]
         else:
             raise ValueError(
                 f'Scheduler {self.scheduler} not defined.')
-        scheduler_b = CosineAnnealingLR(
-            opt_b, T_max=10)
+        scheduler = CosineAnnealingWarmRestarts(
+            opt_b, T_0=3, T_mult=3)
         return [opt_g, opt_b], [scheduler, scheduler_b]
 
     def validation_step(self, batch, batch_idx):
