@@ -526,11 +526,11 @@ class MultBatchVAE(MultVAE):
         parser.add_argument(
             '--gam-prior',
             help=('Alpha parameter of Gamma prior for batch overdispersion'),
-            required=True, type=float, default=0.17)
+            required=False, type=float, default=0.17)
         parser.add_argument(
             '--phi-prior',
             help=('Beta parameter of Gamma prior for batch overdispersion'),
-            required=True, type=float, default=0.08)
+            required=False, type=float, default=0.08)
         parser.add_argument(
             '--load-vae-weights',
             help=('Pre-trained linear VAE weights.'),
