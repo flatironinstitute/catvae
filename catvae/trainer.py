@@ -433,8 +433,9 @@ class MultBatchVAE(MultVAE):
         batch_ids = batch_ids.to(self.device)
         self.vae.train()
         losses = self.vae(counts, batch_ids)
-        loss, recon_loss, kl_div_z, kl_div_b, _ = losses
+        loss, recon_loss, kl_div_z, kl_div_b, kl_div_S = losses
         assert torch.isnan(loss).item() is False
+        # assert torch.sum(loss) > 0, (loss, recon_loss, kl_div_z, kl_div_b, kl_div_S)
         tensorboard_logs = {
             'lr': current_lr, 'train_loss': loss
         }
@@ -449,18 +450,18 @@ class MultBatchVAE(MultVAE):
             self.vae.batch_parameters(),
             lr=self.hparams['learning_rate'], weight_decay=0.001)
         if self.hparams['scheduler'] == 'cosine_warm':
-            scheduler = CosineAnnealingWarmRestarts(
-                opt_g, T_0=2, T_mult=2)
+            scheduler_b = CosineAnnealingWarmRestarts(
+                opt_b, T_0=2, T_mult=2)
         elif self.hparams['scheduler'] == 'cosine':
-            scheduler = CosineAnnealingLR(
-                opt_g, T_max=11)
+            scheduler_b = CosineAnnealingLR(
+                opt_b, T_max=11)
         elif self.hparams['scheduler'] == 'none':
             return [opt_g, opt_b]
         else:
             raise ValueError(
                 f'Scheduler {self.scheduler} not defined.')
         scheduler = CosineAnnealingWarmRestarts(
-            opt_b, T_0=3, T_mult=3)
+            opt_g, T_0=3, T_mult=3)
         return [opt_g, opt_b], [scheduler, scheduler_b]
 
     def validation_step(self, batch, batch_idx):
@@ -469,13 +470,14 @@ class MultBatchVAE(MultVAE):
             counts = counts.to(self.device)
             batch_ids = batch_ids.to(self.device)
             losses = self.vae(counts, batch_ids)
-            loss, rec_err, kl_div_z, kl_div_b, _ = losses
+            loss, rec_err, kl_div_z, kl_div_b, kl_div_S = losses
             assert torch.isnan(loss).item() is False
             # Record the actual loss.
             tensorboard_logs = {'val_loss': loss,
                                 'val/recon_loss': rec_err,
                                 'val/kl_div_z': kl_div_z,
                                 'val/kl_div_b': kl_div_b,
+                                'val/kl_div_S': kl_div_S,
                                 'val_rec_err': rec_err}
             # log the learning rate
             return {'val_loss': loss, 'log': tensorboard_logs}
@@ -485,6 +487,7 @@ class MultBatchVAE(MultVAE):
                    'val/recon_loss',
                    'val/kl_div_z',
                    'val/kl_div_b',
+                   'val/kl_div_S',
                    'val_rec_err']
         tensorboard_logs = {}
         for m in metrics:

@@ -204,7 +204,7 @@ class LinearVAE(nn.Module):
         x_out = self.decoder(z_sample)
         kl_div = kl_divergence(qz, Normal(0, 1)).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
-        elbo = kl_div + recon_loss
+        elbo = recon_loss - kl_div
         loss = - elbo
         return loss
 
@@ -247,7 +247,7 @@ class LinearDLRVAE(LinearVAE):
         x_out = self.decoder(z_sample) + l_sample
         kl_div = kl_divergence(qz, Normal(0, 1)).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
-        elbo = kl_div + recon_loss
+        elbo = recon_loss - kl_div
         loss = - elbo
         return loss
 
@@ -308,6 +308,11 @@ class LinearBatchVAE(LinearVAE):
         self.beta_logvars = nn.Embedding(batch_dim, self.ilr_dim)
         self.loggamma = nn.Embedding(batch_dim, self.ilr_dim)
         self.logphi = nn.Embedding(batch_dim, self.ilr_dim)
+        # initialize posterior weights
+        self.beta.weight.data.fill_(0.0)
+        self.beta_logvars.weight.data.fill_(-8)  # exp(-7) = 0.001
+        self.loggamma.weight.data.fill_(2.5)     # roughly e
+        self.logphi.weight.data.fill_(0.3)       # roughly 1 / e
         # define encoder batch vars
         self.batch_embed = nn.Embedding(batch_dim, latent_dim)
 
@@ -382,9 +387,17 @@ class LinearBatchVAE(LinearVAE):
         kl_div_b = kl_divergence(qb, Normal(0, self.bpr)).mean(0).sum()
         kl_div_S = kl_divergence(qS, Gamma(self.gpr, self.ppr)).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
-        elbo = kl_div_z + kl_div_b + kl_div_S + recon_loss
+        elbo = recon_loss - kl_div_z - kl_div_b - kl_div_S
         loss = - elbo
-        return loss, -recon_loss, -kl_div_z, -kl_div_b, -kl_div_S
+        # print(x)
+        # print(b)
+        # print('elbo', elbo)
+        # print('recon_loss', recon_loss)
+        # print('kl_div_z', kl_div_z)
+        # print('kl_div_b', kl_div_b)
+        # print('kl_div_S', kl_div_S)
+        # raise ValueError('break here.')
+        return loss, -recon_loss, kl_div_z, kl_div_b, kl_div_S
 
     def get_reconstruction_loss(self, x, b):
         z_mean = self.encode(x, b)

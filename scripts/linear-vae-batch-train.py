@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from catvae.trainer import (MultVAE, MultBatchVAE, BiomDataModule,
                             add_data_specific_args)
+import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
@@ -29,15 +30,14 @@ def main(args):
         beta_prior = beta_prior.values.astype(np.float64)
         beta_prior = beta_prior.reshape(1, -1).squeeze()
         beta_prior = torch.Tensor(beta_prior).float()
-
         model = MultBatchVAE(
-            n_input,
-            n_batches,
+            n_input=n_input,
+            n_batches=n_batches,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
-            beta_prior=args.beta_prior,
-            gam_prior=torch.Tensor([args.gam_prior]),
-            phi_prior=torch.Tensor([args.phi_prior]),
+            beta_prior=beta_prior,
+            gam_prior=args.gam_prior,
+            phi_prior=args.phi_prior,
             basis=args.basis,
             dropout=args.dropout,
             bias=args.bias,
