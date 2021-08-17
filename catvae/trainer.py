@@ -373,7 +373,7 @@ class MultBatchVAE(MultVAE):
             latent_dim=n_latent,
             batch_dim=n_batches,
             batch_norm=batch_norm,
-            beta_prior=beta_prior,
+            beta_prior=torch.Tensor(beta_prior).float(),
             gam_prior=torch.Tensor([gam_prior]),
             phi_prior=torch.Tensor([phi_prior]),
             basis=basis,
