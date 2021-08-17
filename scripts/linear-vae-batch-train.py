@@ -29,7 +29,6 @@ def main(args):
         beta_prior = beta_prior.set_index(beta_prior.columns[0])
         beta_prior = beta_prior.values.astype(np.float64)
         beta_prior = beta_prior.reshape(1, -1).squeeze().tolist()
-        print(beta_prior)
         model = MultBatchVAE(
             n_input=n_input,
             n_batches=n_batches,

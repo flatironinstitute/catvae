@@ -300,6 +300,7 @@ class LinearBatchVAE(LinearVAE):
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         # define batch priors
+        beta_prior = torch.Tensor(beta_prior).float()
         self.register_buffer('bpr', beta_prior)
         self.register_buffer('gpr', gam_prior)
         self.register_buffer('ppr', phi_prior)
@@ -389,14 +390,6 @@ class LinearBatchVAE(LinearVAE):
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
         elbo = recon_loss - kl_div_z - kl_div_b - kl_div_S
         loss = - elbo
-        # print(x)
-        # print(b)
-        # print('elbo', elbo)
-        # print('recon_loss', recon_loss)
-        # print('kl_div_z', kl_div_z)
-        # print('kl_div_b', kl_div_b)
-        # print('kl_div_S', kl_div_S)
-        # raise ValueError('break here.')
         return loss, -recon_loss, kl_div_z, kl_div_b, kl_div_S
 
     def get_reconstruction_loss(self, x, b):
