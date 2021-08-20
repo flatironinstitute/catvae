@@ -1,4 +1,4 @@
-import torch
+nnnnnnnnimport torch
 import torch.nn as nn
 from catvae.composition import closure
 from gneiss.cluster import random_linkage
@@ -309,11 +309,6 @@ class LinearBatchVAE(LinearVAE):
         self.beta_logvars = nn.Embedding(batch_dim, self.ilr_dim)
         self.loggamma = nn.Embedding(batch_dim, self.ilr_dim)
         self.logphi = nn.Embedding(batch_dim, self.ilr_dim)
-        # initialize posterior weights
-        self.beta.weight.data.fill_(0.0)
-        self.beta_logvars.weight.data.fill_(-8)  # exp(-7) = 0.001
-        self.loggamma.weight.data.fill_(2.5)     # roughly e
-        self.logphi.weight.data.fill_(0.3)       # roughly 1 / e
         # define encoder batch vars
         self.batch_embed = nn.Embedding(batch_dim, latent_dim)
 

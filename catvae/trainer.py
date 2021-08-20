@@ -374,8 +374,8 @@ class MultBatchVAE(MultVAE):
             batch_dim=n_batches,
             batch_norm=batch_norm,
             beta_prior=torch.Tensor(beta_prior).float(),
-            gam_prior=torch.Tensor([gam_prior]),
-            phi_prior=torch.Tensor([phi_prior]),
+            gam_prior=torch.Tensor(gam_prior).float(),
+            phi_prior=torch.Tensor(phi_prior).float(),
             basis=basis,
             encoder_depth=encoder_depth,
             bias=bias,
@@ -522,18 +522,10 @@ class MultBatchVAE(MultVAE):
         parser = MultVAE.add_model_specific_args(
             parent_parser, add_help=add_help)
         parser.add_argument(
-            '--beta-prior',
-            help=('Pre-learned batch effect priors'
+            '--batch-prior',
+            help=('Batch hyper-priors. '
                   '(must have same number of dimensions as `train-biom`)'),
             required=True, type=str, default=None)
-        parser.add_argument(
-            '--gam-prior',
-            help=('Alpha parameter of Gamma prior for batch overdispersion'),
-            required=False, type=float, default=0.17)
-        parser.add_argument(
-            '--phi-prior',
-            help=('Beta parameter of Gamma prior for batch overdispersion'),
-            required=False, type=float, default=0.08)
         parser.add_argument(
             '--load-vae-weights',
             help=('Pre-trained linear VAE weights.'),
