@@ -139,7 +139,6 @@ class LinearVAE(nn.Module):
         if grassmannian:
             geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
-        self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
         self.distribution = distribution
         if self.transform == 'arcsine':
@@ -213,6 +212,48 @@ class LinearVAE(nn.Module):
         z_mean = self.encode(x)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        x_out = self.decoder(z_sample)
+        recon_loss = -self.recon_model_loglik(x, x_out)
+        return recon_loss
+
+
+class LinearDLRVAE(LinearVAE):
+
+    def __init__(self, input_dim, hidden_dim, latent_dim=None,
+                 init_scale=0.001, encoder_depth=1,
+                 basis=None, bias=True,
+                 transform='pseudocount', distribution='multinomial',
+                 dropout=0, batch_norm=False, grassmannian=True):
+        super(LinearDLRVAE, self).__init__(
+            input_dim, hidden_dim, latent_dim,
+            init_scale=init_scale, basis=basis,
+            encoder_depth=encoder_depth,
+            bias=bias, transform=transform, dropout=dropout,
+            batch_norm=batch_norm, grassmannian=grassmannian)
+        self.log_sigma_sq = nn.Parameter(torch.ones(input_dim - 1))
+
+    def sample(self, x):
+        z_mean = self.encode(x)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
+
+    def forward(self, x):
+        z_mean = self.encode(x)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        x_out = self.decoder(z_sample)
+        delta = torch.normal(torch.zeros_like(x_out), 1.0)
+        x_out += delta * torch.exp(0.5 * self.log_sigma_sq)
+        kl_div = self.gaussian_kl(
+            z_mean, self.variational_logvars).mean(0).sum()
+        recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
+        elbo = kl_div + recon_loss
+        loss = - elbo
+        return loss
+
+    def get_reconstruction_loss(self, x):
+        z_sample = self.sample(x)
         x_out = self.decoder(z_sample)
         recon_loss = -self.recon_model_loglik(x, x_out)
         return recon_loss
