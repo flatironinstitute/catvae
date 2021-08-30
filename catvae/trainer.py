@@ -94,7 +94,7 @@ class MultVAE(pl.LightningModule):
                  dropout=0, bias=True, tss=False, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, scheduler='cosine',
                  transform='pseudocount', distribution='multinomial',
-                 grassmannian=True):
+                 overdispersion=True, grassmannian=True):
         super().__init__()
         # a hack to avoid the save_hyperparameters anti-pattern
         # https://github.com/PyTorchLightning/pytorch-lightning/issues/7443
@@ -112,20 +112,34 @@ class MultVAE(pl.LightningModule):
             'scheduler': scheduler,
             'transform': transform,
             'distribution': distribution,
+            'overdispersion': overdispersion,
             'grassmannian': grassmannian,
         }
         basis = self.set_basis(n_input, basis)
-        self.vae = LinearDLRVAE(
-            n_input, basis=basis,
-            hidden_dim=n_hidden,
-            latent_dim=n_latent,
-            bias=bias,
-            encoder_depth=encoder_depth,
-            batch_norm=batch_norm,
-            dropout=dropout,
-            distribution=distribution,
-            transform=transform,
-            grassmannian=grassmannian)
+        if overdispersion:
+            self.vae = LinearDLRVAE(
+                n_input, basis=basis,
+                hidden_dim=n_hidden,
+                latent_dim=n_latent,
+                bias=bias,
+                encoder_depth=encoder_depth,
+                batch_norm=batch_norm,
+                dropout=dropout,
+                distribution=distribution,
+                transform=transform,
+                grassmannian=grassmannian)
+        else:
+            self.vae = LinearVAE(
+                n_input, basis=basis,
+                hidden_dim=n_hidden,
+                latent_dim=n_latent,
+                bias=bias,
+                encoder_depth=encoder_depth,
+                batch_norm=batch_norm,
+                dropout=dropout,
+                distribution=distribution,
+                transform=transform,
+                grassmannian=grassmannian)
         self.gt_eigvectors = None
         self.gt_eigs = None
 
@@ -310,6 +324,11 @@ class MultVAE(pl.LightningModule):
             '--transform', help=('Specifies transform for preprocessing '
                                  '(arcsine, pseudocount, clr)'),
             required=False, type=str, default='pseudocount')
+        parser.add_argument(
+            '--no-overdispersion',
+            help=('Specifies if overdispersion estimates are disabled. '),
+            required=False, dest='overdispersion', action='store_false')
+        parser.set_defaults(overdispersion=True)
         parser.add_argument(
             '--no-grassmannian',
             help=('Specifies if grassmanian manifold optimization '

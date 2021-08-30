@@ -29,6 +29,7 @@ def main(args):
                         learning_rate=args.learning_rate,
                         scheduler=args.scheduler,
                         transform=args.transform,
+                        overdispersion=args.overdispersion,
                         grassmannian=args.grassmannian)
 
     print(args)
