@@ -28,8 +28,9 @@ def main(args):
     D, _ = t.shape
 
     obs_md = {i: {'taxonomy': 'None'} for i in t.ids(axis='observation')}
-    batch_cats = metadata.loc[t.ids(), args.batch_category].values
-    sample_md = {i: {'batch': v} for i, v in zip(t.ids(), batch_cats)}
+    if args.batch_category is not None:
+        batch_cats = metadata.loc[t.ids(), args.batch_category].values
+        sample_md = {i: {'batch': v} for i, v in zip(t.ids(), batch_cats)}
     t.add_metadata(sample_md, axis='sample')
     t.add_metadata(obs_md, axis='observation')
 
@@ -37,7 +38,10 @@ def main(args):
     # https://github.com/biocore/biom-format/pull/845
     adata = t.to_anndata()
     adata.layers["counts"] = adata.X.copy()  # preserve counts
-    scvi.data.setup_anndata(adata, layer="counts", batch_key="batch")
+    if args.batch_category is not None:
+        scvi.data.setup_anndata(adata, layer="counts", batch_key="batch")
+    else:
+        scvi.data.setup_anndata(adata, layer="counts")
     model = scvi.model.LinearSCVI(
         adata, dropout_rate=args.dropout,
         n_latent=args.n_latent, n_layers=args.encoder_depth,
