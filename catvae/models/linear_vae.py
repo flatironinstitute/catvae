@@ -185,9 +185,13 @@ class LinearVAE(nn.Module):
             raise ValueError(f'Unrecognzied transform {self.transform}')
         return hx
 
-    def sample(self, x):
+    def sample(self, x, size=None):
+        # obtain mean of latent distribution
         z_mean = self.encode(x)
-        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        if size is None:
+            eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        else:
+            eps = torch.normal(torch.zeros(size), 1.0)
         z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
         return z_sample
 
