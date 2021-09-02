@@ -1,4 +1,3 @@
-import os
 import argparse
 import scvi
 from catvae.trainer import MultVAE, add_data_specific_args
