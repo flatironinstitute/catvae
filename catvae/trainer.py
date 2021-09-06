@@ -728,7 +728,7 @@ class TripletVAE(pl.LightningDataModule):
             '--n-hidden', help='Triplet embedding dimension.',
             required=False, type=int, default=64)
         parser.add_argument(
-            '--n-layers', help='Number of layers.',
+            '--n-layers', help='Number of layers in triplet net.',
             required=False, type=int, default=1)
         parser.add_argument(
             '--learning-rate', help='Learning rate',
@@ -770,7 +770,8 @@ def add_data_specific_args(parent_parser, add_help=True):
         required=False, type=int, default=32)
     # Arguments specific for trainer
     parser.add_argument(
-        '--epochs', help='Training batch size',
+        '--epochs',
+        help='Number of epochs (aka iterations) to train model.',
         required=False, type=int, default=100)
     parser.add_argument('--num-workers', type=int, default=1)
     parser.add_argument('--gpus', type=int)
