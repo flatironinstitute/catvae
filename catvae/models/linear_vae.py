@@ -23,7 +23,7 @@ def get_basis(input_dim, basis=None):
 
 
 class ArcsineEmbed(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, dropout=0):
         super(ArcsineEmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
@@ -43,7 +43,7 @@ class ArcsineEmbed(nn.Module):
 
 
 class CLREmbed(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
+    def __init__(self, input_dim, hidden_dim, dropout=0):
         super(CLREmbed, self).__init__()
         self.embed = nn.Parameter(
             torch.zeros(input_dim, hidden_dim))
@@ -68,7 +68,7 @@ class Encoder(nn.Module):
     def __init__(self, input_dim: int,
                  hidden_dim: int,
                  latent_dim: int, bias: bool = False,
-                 dropout: float = 0.1, batch_norm: bool = True,
+                 dropout: float = 0, batch_norm: bool = True,
                  depth: int = 1, init_scale: float = 0.001):
         super(Encoder, self).__init__()
         if depth > 1:
@@ -118,8 +118,9 @@ class LinearVAE(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, latent_dim=None,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False, transform='arcsine',
-                 dropout=0.1, batch_norm=True):
+                 basis=None, bias=True,
+                 transform='pseudocount', distribution='multinomial',
+                 dropout=0, batch_norm=False, grassmannian=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
             latent_dim = hidden_dim
@@ -135,10 +136,11 @@ class LinearVAE(nn.Module):
             dropout=dropout, batch_norm=batch_norm)
         self.decoder = nn.Linear(
             latent_dim, self.input_dim, bias=self.bias)
-        geotorch.grassmannian(self.decoder, 'weight')
+        if grassmannian:
+            geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
-        self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
+        self.distribution = distribution
         if self.transform == 'arcsine':
             self.input_embed = ArcsineEmbed(self.input_dim + 1,
                                             hidden_dim, dropout)
@@ -156,10 +158,20 @@ class LinearVAE(nn.Module):
 
     def recon_model_loglik(self, x_in, x_out):
         logp = (self.Psi.t() @ x_out.t()).t()
-        mult_loss = Multinomial(
-            logits=logp, validate_args=False  # weird ...
-        ).log_prob(x_in).mean()
-        return mult_loss
+        if self.distribution == 'multinomial':
+            dist_loss = Multinomial(
+                logits=logp, validate_args=False  # weird ...
+            ).log_prob(x_in).mean()
+        elif self.distribution == 'gaussian':
+            # MSE loss based out on DeepMicro
+            # https://www.nature.com/articles/s41598-020-63159-5
+            dist_loss = Normal(
+                loc=logp, scale=1, validate_args=False  # weird ...
+            ).log_prob(x_in).mean()
+        else:
+            raise ValueError(
+                f'Distribution {self.distribution} is not supported.')
+        return dist_loss
 
     def impute(self, x):
         if self.transform in {'arcsine', 'clr'}:
@@ -167,9 +179,21 @@ class LinearVAE(nn.Module):
         elif self.transform == 'pseudocount':
             fx = torch.log(x + 1)                 # ILR transform for testing
             hx = (self.Psi @ fx.T).T              # B x D-1
+        elif self.transform == 'none':
+            hx = x
         else:
             raise ValueError(f'Unrecognzied transform {self.transform}')
         return hx
+
+    def sample(self, x, size=None):
+        # obtain mean of latent distribution
+        z_mean = self.encode(x)
+        if size is None:
+            eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        else:
+            eps = torch.normal(torch.zeros(size), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
 
     def encode(self, x):
         hx = self.impute(x)
@@ -197,12 +221,57 @@ class LinearVAE(nn.Module):
         return recon_loss
 
 
+class LinearDLRVAE(LinearVAE):
+
+    def __init__(self, input_dim, hidden_dim, latent_dim=None,
+                 init_scale=0.001, encoder_depth=1,
+                 basis=None, bias=True,
+                 transform='pseudocount', distribution='multinomial',
+                 dropout=0, batch_norm=False, grassmannian=True):
+        super(LinearDLRVAE, self).__init__(
+            input_dim, hidden_dim, latent_dim,
+            init_scale=init_scale, basis=basis,
+            encoder_depth=encoder_depth,
+            bias=bias, transform=transform, dropout=dropout,
+            batch_norm=batch_norm, grassmannian=grassmannian)
+        self.log_sigma_sq = nn.Parameter(torch.ones(input_dim - 1))
+
+    def sample(self, x):
+        z_mean = self.encode(x)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
+
+    def forward(self, x):
+        z_mean = self.encode(x)
+        eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        x_out = self.decoder(z_sample)
+        delta = torch.normal(torch.zeros_like(x_out), 1.0)
+        x_out += delta * torch.exp(0.5 * self.log_sigma_sq)
+        kl_div = self.gaussian_kl(
+            z_mean, self.variational_logvars).mean(0).sum()
+        recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
+        elbo = kl_div + recon_loss
+        loss = - elbo
+        return loss
+
+    def get_reconstruction_loss(self, x):
+        z_sample = self.sample(x)
+        x_out = self.decoder(z_sample)
+        recon_loss = -self.recon_model_loglik(x, x_out)
+        return recon_loss
+
+
 class LinearBatchVAE(LinearVAE):
     def __init__(self, input_dim, hidden_dim, latent_dim,
                  batch_dim, batch_prior,
                  init_scale=0.001, encoder_depth=1,
-                 basis=None, bias=False, transform='arcsine',
-                 batch_norm=True, dropout=0.1):
+                 basis=None, bias=True,
+                 transform='pseudocount',
+                 distribution='multinomial',
+                 batch_norm=False, dropout=0,
+                 grassmannian=True):
         """ Account for batch effects.
 
         Parameters
@@ -224,21 +293,22 @@ class LinearBatchVAE(LinearVAE):
         """
         super(LinearBatchVAE, self).__init__(
             input_dim, hidden_dim, latent_dim,
-            init_scale, basis=basis, encoder_depth=encoder_depth,
+            init_scale=init_scale, basis=basis,
+            encoder_depth=encoder_depth,
             bias=bias, transform=transform, dropout=dropout,
-            batch_norm=batch_norm)
+            batch_norm=batch_norm, grassmannian=grassmannian)
         self.batch_dim = batch_dim
         self.ilr_dim = input_dim - 1
         batch_prior = batch_prior
         self.register_buffer('batch_prior', batch_prior)
         self.batch_logvars = nn.Parameter(torch.zeros(self.ilr_dim))
         self.beta = nn.Embedding(batch_dim, self.ilr_dim)
+        self.batch_embed = nn.Embedding(batch_dim, latent_dim)
 
     def encode(self, x, b):
         hx = self.impute(x)
-        batch_effects = self.beta(b)
-        hx = hx - batch_effects
-        z = self.encoder(hx)
+        zb = self.batch_embed(b)
+        z = self.encoder(hx) - zb
         return z
 
     def encode_marginalized(self, x, b):
@@ -266,6 +336,16 @@ class LinearBatchVAE(LinearVAE):
         hx = hx - batch_effects
         z = self.encoder(hx)
         return z
+
+    def sample(self, x, b, size=None):
+        # obtain mean of latent distribution
+        z_mean = self.encode(x, b)
+        if size is None:
+            eps = torch.normal(torch.zeros_like(z_mean), 1.0)
+        else:
+            eps = torch.normal(torch.zeros(size), 1.0)
+        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        return z_sample
 
     def forward(self, x, b):
         z_mean = self.encode(x, b)
