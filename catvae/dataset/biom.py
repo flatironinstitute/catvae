@@ -149,7 +149,7 @@ class TripletDataset(BiomDataset):
             metadata: pd.DataFrame,
             class_category: str,
             batch_category: str):
-        super(TripletDataset).__init__()
+        super(TripletDataset).__init__(table, metadata, batch_category)
         self.table = table
         self.metadata = metadata
         self.batch_category = batch_category
@@ -200,3 +200,13 @@ def collate_q2_f(batch):
     features = [b[0] for b in batch]
     sample_idx = np.vstack([b[1] for b in batch])
     return features, sample_idx.squeeze()
+
+
+def collate_triple_f(batch):
+    i_counts_list = np.vstack([b[0] for b in batch])
+    j_counts_list = np.vstack([b[1] for b in batch])
+    k_counts_list = np.vstack([b[2] for b in batch])
+    i_counts = torch.from_numpy(i_counts_list).float()
+    j_counts = torch.from_numpy(j_counts_list).float()
+    k_counts = torch.from_numpy(k_counts_list).float()
+    return i_counts, j_counts, k_counts
