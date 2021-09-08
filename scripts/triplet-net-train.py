@@ -2,7 +2,8 @@ import os
 import argparse
 import numpy as np
 from catvae.trainer import MultVAE, TripletVAE
-from catvae.trainer import BiomDataModule, add_data_specific_args
+from catvae.trainer import BiomDataModule, TripletDataModule
+from catvae.trainer import add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
@@ -13,30 +14,28 @@ import yaml
 
 
 def main(args):
+    print(args)
     if args.load_from_checkpoint is None:
         raise ValueError('`load-from-checkpoint` should be specified.')
+
     vae_model = MultVAE.load_from_checkpoint(args.load_from_checkpoint)
     model = TripletVAE(
-        vae_model,
-        n_input=vae_model.vae.decoder.in_features,
+        args.load_from_checkpoint,
         n_hidden=args.n_hidden, n_layers=args.n_layers,
         learning_rate=args.learning_rate,
         vae_learning_rate=args.vae_lr,
-        scheduler='cosine'
+        scheduler=args.scheduler
     )
-    print(args)
     print(model)
-    if args.eigvectors is not None and args.eigvalues is not None:
-        eigvectors = np.loadtxt(args.eigvectors)
-        eigvalues = np.loadtxt(args.eigvalues)
-        model.set_eigs(eigvectors, eigvalues)
     if args.profile:
         profiler = AdvancedProfiler()
     else:
         profiler = None
-    dm = BiomDataModule(
+    dm = TripletDataModule(
         args.train_biom, args.test_biom, args.val_biom,
-        metadata=args.sample_metadata, batch_category=args.batch_category,
+        metadata=args.sample_metadata,
+        batch_category=args.batch_category,
+        class_category=args.class_category,
         batch_size=args.batch_size, num_workers=args.num_workers)
 
     ckpt_path = os.path.join(
@@ -54,10 +53,6 @@ def main(args):
     # save hyper-parameters to yaml file
     with open(f'{args.output_directory}/hparams.yaml', 'w') as outfile:
         yaml.dump(model._hparams, outfile, default_flow_style=False)
-    # save tree to file if specified
-    if os.path.exists(args.basis):
-        tree = TreeNode.read(args.basis)
-        tree.write(f'{args.output_directory}/tree.nwk')
 
     trainer = Trainer(
         max_epochs=args.epochs,

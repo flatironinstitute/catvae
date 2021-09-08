@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
+from patsy import dmatrix
+from numba import jit
 
 
 class BiomDataset(Dataset):
@@ -116,6 +118,57 @@ class Q2BiomDataset(BiomDataset):
         return _sample2dict(self.feature_data, self.feature_ids, i)
 
 
+class BiomTestDataset(Dataset):
+    """Loads a `.biom` file.
+
+    Parameters
+    ----------
+    filename : Path
+        Filepath to biom table
+    metadata_file : Path
+        Filepath to sample metadata
+    batch_category : str
+        Column name forr batch indices
+    """
+    def __init__(
+            self,
+            table: biom.Table,
+            metadata: pd.DataFrame = None,
+            batch_category: str = None
+            class_category: str = None):
+        super(BiomDataset).__init__()
+        self.table = table
+        self.metadata = metadata
+        self.class_category = class_category
+        self.populate()
+
+    def __getitem__(self, i):
+        """ Returns all of the samples for a given subject
+
+        Returns
+        -------
+        counts : np.array
+            OTU counts for specified samples.
+        batch_indices : np.array
+            Membership ids for batch samples. If not specified, return None.
+        class_indices : np.array
+            Membership ids for classes. If not specified, return None.
+        """
+        sample_idx = self.table.ids()[i]
+        if self.batch_indices is not None:
+            batch_indices = self.batch_indices[i]
+        else:
+            batch_indices = None
+
+        if self.class_indices is not None:
+            class_indices = self.class_indices[i]
+        else:
+            class_indices = None
+
+        counts = self.table.data(id=sample_idx, axis='sample')
+        return counts, batch_indices, class_indices
+
+
 def _get_triplet(G, category):
     """ Picks triplets based on class assignments. """
     i = np.random.randint(len(G))
@@ -128,6 +181,21 @@ def _get_triplet(G, category):
         j = np.random.randint(len(yesC))
     k = np.random.randint(len(notC))
     return G.index[i], yesC.index[j], notC.index[k]
+
+
+@jit
+def _get_all_triples(status):
+    X = np.zeros((status.shape[0]**3, 4))
+    counter = 0
+    for i in range(status.shape[0]):
+        for j in range(i):
+            for k in range(j):
+                X[counter, 0] = i
+                X[counter, 1] = j
+                X[counter, 2] = k
+                X[counter, 3] = abs(status[i] - status[j]) < abs(status[i] - status[k])
+                counter += 1
+    return X[:counter]
 
 
 class TripletDataset(BiomDataset):
@@ -149,7 +217,7 @@ class TripletDataset(BiomDataset):
             metadata: pd.DataFrame,
             class_category: str,
             batch_category: str):
-        super(TripletDataset).__init__(table, metadata, batch_category)
+        super(TripletDataset).__init__()
         self.table = table
         self.metadata = metadata
         self.batch_category = batch_category
@@ -182,6 +250,67 @@ class TripletDataset(BiomDataset):
         return i_counts, j_counts, k_counts
 
 
+class TripletTestDataset(BiomDataset):
+    """Loads a `.biom` file and generates triplets
+
+    Parameters
+    ----------
+    filename : Path
+        Filepath to biom table
+    metadata_file : Path
+        Filepath to sample metadata
+    category : str
+        Column name for class indices
+    batch : str
+        Column name for batch indices
+    """
+    def __init__(
+            self,
+            table: biom.Table,
+            metadata: pd.DataFrame,
+            class_category: str,
+            class_group: str,
+            confounder_formula: str):
+        super(TripletTestDataset).__init__()
+        self.table = table
+        self.metadata = metadata
+        self.class_category = class_category
+        self.confounder_formula = confounder_formula
+        self.populate()
+        self.metadata = self.metadata.set_index(self.index_name)
+        self.design = dmatrix(confounder_formula, self.metadata,
+                              return_type='dataframe')
+        cc = (self.metadata[class_category] == class_group)
+        cc = cc.values.astype(np.int64)
+        self.all_triples = _get_all_triples(cc)
+
+    def __len__(self) -> int:
+        return len(self.all_triples)
+
+    def __getitem__(self, i):
+        """ Returns all of the samples for a given subject
+
+        Returns
+        -------
+        i_counts : np.array
+            OTU counts for reference sample
+        j_counts : np.array
+            OTU counts for positive sample
+        k_counts : np.array
+            OTU counts for negative sample
+        """
+        b = self.metadata.iloc[i][self.batch_category]
+        i, j, k, d = self.all_triples[i]
+        i_counts = self.table.data(i, axis='sample')
+        j_counts = self.table.data(j, axis='sample')
+        k_counts = self.table.data(k, axis='sample')
+        si = self.design.loc[i].values
+        sj = self.design.loc[j].values
+        sk = self.design.loc[k].values
+        cd = (euclidean(si, sj) == euclidean(si, sk)).astype(np.int64)
+        return i_counts, j_counts, k_counts, d, cd
+
+
 def collate_single_f(batch):
     counts_list = np.vstack([b[0] for b in batch])
     counts = torch.from_numpy(counts_list).float()
@@ -194,6 +323,16 @@ def collate_batch_f(batch):
     counts = torch.from_numpy(counts_list).float()
     batch_ids = torch.from_numpy(batch_ids).long()
     return counts, batch_ids.squeeze()
+
+
+def collate_class_f(batch):
+    counts_list = np.vstack([b[0] for b in batch])
+    batch_ids = np.vstack([b[1] for b in batch])
+    class_ids = np.vstack([b[2] for b in batch])
+    counts = torch.from_numpy(counts_list).float()
+    batch_ids = torch.from_numpy(batch_ids).long()
+    class_ids = torch.from_numpy(class_ids).long()
+    return counts, batch_ids.squeeze(), class_ids.squeeze()
 
 
 def collate_q2_f(batch):
@@ -210,3 +349,16 @@ def collate_triple_f(batch):
     j_counts = torch.from_numpy(j_counts_list).float()
     k_counts = torch.from_numpy(k_counts_list).float()
     return i_counts, j_counts, k_counts
+
+def collate_triple_test_f(batch):
+    i_counts_list = np.vstack([b[0] for b in batch])
+    j_counts_list = np.vstack([b[1] for b in batch])
+    k_counts_list = np.vstack([b[2] for b in batch])
+    d_list = np.vstack([b[3] for b in batch])
+    c_list = np.vstack([b[3] for b in batch])
+    i_counts = torch.from_numpy(i_counts_list).float()
+    j_counts = torch.from_numpy(j_counts_list).float()
+    k_counts = torch.from_numpy(k_counts_list).float()
+    d_dist = torch.from_numpy(d_list).float()
+    c_dist = torch.from_numpy(c_list).float()
+    return i_counts, j_counts, k_counts, d_dist, c_dist

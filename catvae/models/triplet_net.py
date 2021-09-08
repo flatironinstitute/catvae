@@ -25,19 +25,21 @@ class TripletNet(nn.Module):
         super(TripletNet, self).__init__()
         self.input_size = input_size
         self.embed_dim = embed_dim
-        if layers == 1:
+        if num_layers == 1:
             self.embeddings = nn.Linear(input_size, embed_dim)
         else:
-            layers.append(nn.Linear(input_size, embed_dim, bias=bias))
+            layers = []
+            layers.append(nn.Linear(input_size, embed_dim))
             for layer_i in range(num_layers - 1):
                 layers.append(nn.Softplus())
                 layers.append(nn.Linear(embed_dim, embed_dim))
-        self.init_emb()
 
-    def init_emb(self):
-        initstd = 1 / math.sqrt(self.emb_dimension)
-        self.embeddings.weight.data.normal_(0, initstd)
-        self.embeddings.weight.data.normal_(0, initstd)
+            self.embeddings = nn.Sequential(*layers)
+        # initialize layers
+        init_scale = 1 / math.sqrt(self.embed_dim)
+        for embed_layer in self.embeddings:
+            if isinstance(embed_layer, nn.Linear):
+                embed_layer.weight.data.normal_(0.0, init_scale)
 
     def encode(self, x):
         return self.embeddings(x)
