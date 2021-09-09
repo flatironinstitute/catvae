@@ -3,7 +3,7 @@ from skbio.util import get_data_path
 from biom import load_table
 import pandas as pd
 import numpy as np
-from catvae.dataset.biom import BiomDataset, Q2BiomDataset
+from catvae.dataset.biom import BiomDataset, Q2BiomDataset, TripletDataset
 from catvae.dataset.biom import collate_q2_f
 
 import numpy.testing as npt

@@ -6,6 +6,8 @@ import torch
 from torch.utils.data import Dataset
 from patsy import dmatrix
 from numba import jit
+from sklearn.preprocessing import LabelEncoder
+from scipy.spatial.distance import euclidean
 
 
 class BiomDataset(Dataset):
@@ -134,13 +136,14 @@ class BiomTestDataset(Dataset):
             self,
             table: biom.Table,
             metadata: pd.DataFrame = None,
-            batch_category: str = None
+            batch_category: str = None,
             class_category: str = None):
         super(BiomDataset).__init__()
         self.table = table
         self.metadata = metadata
         self.class_category = class_category
         self.populate()
+        self.class_labeler = LabelEncoder.fit(self.metadata[class_category])
 
     def __getitem__(self, i):
         """ Returns all of the samples for a given subject
@@ -161,7 +164,7 @@ class BiomTestDataset(Dataset):
             batch_indices = None
 
         if self.class_indices is not None:
-            class_indices = self.class_indices[i]
+            class_indices = self.class_labeler.transform(self.class_indices[i])
         else:
             class_indices = None
 
@@ -184,16 +187,16 @@ def _get_triplet(G, category):
 
 
 @jit
-def _get_all_triples(status):
-    X = np.zeros((status.shape[0]**3, 4))
+def _get_all_triples(s):
+    X = np.zeros((s.shape[0]**3, 4))
     counter = 0
-    for i in range(status.shape[0]):
+    for i in range(s.shape[0]):
         for j in range(i):
             for k in range(j):
                 X[counter, 0] = i
                 X[counter, 1] = j
                 X[counter, 2] = k
-                X[counter, 3] = abs(status[i] - status[j]) < abs(status[i] - status[k])
+                X[counter, 3] = (s[i] == s[j]) and (s[i] != s[k])
                 counter += 1
     return X[:counter]
 
@@ -269,7 +272,6 @@ class TripletTestDataset(BiomDataset):
             table: biom.Table,
             metadata: pd.DataFrame,
             class_category: str,
-            class_group: str,
             confounder_formula: str):
         super(TripletTestDataset).__init__()
         self.table = table
@@ -278,10 +280,10 @@ class TripletTestDataset(BiomDataset):
         self.confounder_formula = confounder_formula
         self.populate()
         self.metadata = self.metadata.set_index(self.index_name)
+        self.class_labeler = LabelEncoder.fit(self.metadata[class_category])
         self.design = dmatrix(confounder_formula, self.metadata,
                               return_type='dataframe')
-        cc = (self.metadata[class_category] == class_group)
-        cc = cc.values.astype(np.int64)
+        cc = self.class_labeler.transform(self.metadata[class_category].values)
         self.all_triples = _get_all_triples(cc)
 
     def __len__(self) -> int:
@@ -299,7 +301,7 @@ class TripletTestDataset(BiomDataset):
         k_counts : np.array
             OTU counts for negative sample
         """
-        b = self.metadata.iloc[i][self.batch_category]
+        # b = self.metadata.iloc[i][self.batch_category]
         i, j, k, d = self.all_triples[i]
         i_counts = self.table.data(i, axis='sample')
         j_counts = self.table.data(j, axis='sample')
@@ -349,6 +351,7 @@ def collate_triple_f(batch):
     j_counts = torch.from_numpy(j_counts_list).float()
     k_counts = torch.from_numpy(k_counts_list).float()
     return i_counts, j_counts, k_counts
+
 
 def collate_triple_test_f(batch):
     i_counts_list = np.vstack([b[0] for b in batch])
