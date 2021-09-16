@@ -28,8 +28,11 @@ def main(args):
     D, _ = t.shape
 
     obs_md = {i: {'taxonomy': 'None'} for i in t.ids(axis='observation')}
-    batch_cats = metadata.loc[t.ids(), args.batch_category].values
-    sample_md = {i: {'batch': v} for i, v in zip(t.ids(), batch_cats)}
+    if args.batch_category is None:
+        sample_md = {i: {'batch': 'None'} for i in t.ids()}
+    else:
+        batch_cats = metadata.loc[t.ids(), args.batch_category].values
+        sample_md = {i: {'batch': v} for i, v in zip(t.ids(), batch_cats)}
     t.add_metadata(sample_md, axis='sample')
     t.add_metadata(obs_md, axis='observation')
 

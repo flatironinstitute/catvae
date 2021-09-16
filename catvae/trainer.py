@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR,
     CosineAnnealingLR)
-from catvae.dataset.biom import BiomDataset
+from catvae.dataset.biom import BiomDataset, BiomTestDataset
 from catvae.dataset.biom import TripletDataset, TripletTestDataset
 from catvae.dataset.biom import (collate_triple_f, collate_triple_test_f,
                                  collate_single_f, collate_batch_f,
@@ -103,8 +103,8 @@ class BiomDataModule(pl.LightningDataModule):
 
 class TripletDataModule(pl.LightningDataModule):
     def __init__(self, train_biom, test_biom, valid_biom,
-                 metadata, batch_category, class_category, class_group,
-                 confounder_formula, batch_size=10, num_workers=1):
+                 metadata, batch_category, class_category,
+                 confounder_formula=None, batch_size=10, num_workers=1):
         super().__init__()
         self.train_biom = train_biom
         self.test_biom = test_biom
@@ -113,7 +113,6 @@ class TripletDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.batch_category = batch_category
         self.class_category = class_category
-        self.class_group = class_group
         self.confounder_formula = confounder_formula
         self.metadata = pd.read_table(
             metadata, dtype=str)
@@ -150,28 +149,30 @@ class TripletDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
 
-        test_dataset = BiomDataset(
+        test_dataset = BiomTestDataset(
             load_table(self.test_biom),
             metadata=self.metadata,
-            batch_category=self.batch_category)
+            batch_category=self.batch_category,
+            class_category=self.class_category)
         test_dataloader = DataLoader(
             test_dataset, batch_size=len(test_dataset),
             collate_fn=collate_class_f,
             shuffle=False, num_workers=self.num_workers,
-            drop_last=True, pin_memory=True)
+            drop_last=False, pin_memory=True)
+        return test_dataloader
 
+    def predict_dataloader(self):
         test2_dataset = TripletTestDataset(
             load_table(self.test_biom),
             metadata=self.metadata,
             class_category=self.class_category,
-            class_group=self.class_group,
             confounder_formula=self.confounder_formula)
         test2_dataloader = DataLoader(
-            test_dataset, batch_size=len(test2_dataset),
+            test2_dataset, batch_size=len(test2_dataset),
             collate_fn=collate_triple_test_f,
             shuffle=False, num_workers=self.num_workers,
-            drop_last=True, pin_memory=True)
-        return [test_dataloader, test2_dataloader]
+            drop_last=False, pin_memory=True)
+        return test2_dataloader
 
 
 class MultVAE(pl.LightningModule):
@@ -742,36 +743,48 @@ class TripletVAE(pl.LightningModule):
             tensorboard_logs[m] = rec_err
         return {'val_loss': rec_err, 'log': tensorboard_logs}
 
-    def test_step(self, batch, batch_idx, dataset_idx):
+    def test_step(self, batch, batch_idx):
         with torch.no_grad():
-            if dataset_idx == 0:  # single dataset
-                counts, labels, class_labels = batch
-                counts = counts.to(self.device)
-                z = self.vae.to_latent(counts).detach().cpu()
-                test_model = KNeighborsClassifier(n_neighbors=5)
-                X_train, X_test, y_train, y_test = train_test_split(
-                    z, class_labels, test_size=0.3, random_state=0)
-                y_pred = test_model.predict(X_test)
-                res = classification_report(y_test, y_pred)
-                self.logger.experiment.add_text(
-                    'test/knn_results', res, self.global_step)
-                return {'test/knn_results': res}
-            if dataset_idx == 1:  # triplet dataset
-                i_counts, j_counts, k_counts, d_dist, c_dist = batch
-                i_counts = i_counts.to(self.device)
-                j_counts = j_counts.to(self.device)
-                k_counts = k_counts.to(self.device)
-                pos_u = self.vae.to_latent(i_counts)
-                pos_v = self.vae.to_latent(j_counts)
-                neg_v = self.vae.to_latent(k_counts)
-                pos_uv = torch.linalg.norm(pos_u, pos_v, dim=1)
-                neg_uv = torch.linalg.norm(pos_u, neg_v, dim=1)
-                pred_uv = (pos_uv < neg_uv).detach().cpu()
-                test_uv = d_dist
-                res = classification_report(test_uv, pred_uv)
-                self.logger.experiment.add_text(
-                    'test/triplet_results', res, self.global_step)
-                return {'test/triplet_results': res}
+            counts, labels, class_labels = batch
+            counts = counts.to(self.device)
+            z = self.vae.to_latent(counts).detach().cpu().numpy()
+            class_labels = class_labels.detach().cpu().numpy()
+            test_model = KNeighborsClassifier(n_neighbors=5)
+            X_train, X_test, y_train, y_test = train_test_split(
+                z, class_labels, test_size=0.3, random_state=0)
+            test_model.fit(X_train, y_train)
+            y_pred = test_model.predict(X_test)
+            res = classification_report(y_test, y_pred)
+            self.logger.experiment.add_text(
+                'test/knn_results', res, self.global_step)
+            tensorboard_logs = {
+                'test/knn_results': res
+            }
+            print(res)
+            return {'test/knn_results': res, 'log': tensorboard_logs}
+
+    def predict_step(self, batch, batch_idx):
+        with torch.no_grad():
+            i_counts, j_counts, k_counts, d_dist, c_dist = batch
+            i_counts = i_counts.to(self.device)
+            j_counts = j_counts.to(self.device)
+            k_counts = k_counts.to(self.device)
+            pos_u = self.vae.to_latent(i_counts)
+            pos_v = self.vae.to_latent(j_counts)
+            neg_v = self.vae.to_latent(k_counts)
+            pos_uv = torch.linalg.norm(pos_u - pos_v, dim=1)
+            neg_uv = torch.linalg.norm(pos_u - neg_v, dim=1)
+            pred_uv = (pos_uv < neg_uv).detach().cpu()
+            test_uv = d_dist
+            res = classification_report(test_uv, pred_uv)
+            self.logger.experiment.add_text(
+                'test/triplet_results', res, self.global_step)
+            tensorboard_logs = {
+                'test/triplet_results': res
+            }
+            print(res)
+            return {'test/triplet_results': res, 'log': tensorboard_logs}
+
 
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):

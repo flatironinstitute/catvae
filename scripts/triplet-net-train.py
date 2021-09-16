@@ -64,9 +64,17 @@ def main(args):
         callbacks=[checkpoint_callback])
 
     trainer.fit(model, dm)
-    trainer.save_checkpoint(
-        args.output_directory + '/last_ckpt.pt')
+    ckpt_path = args.output_directory + '/last_ckpt.pt'
+    trainer.save_checkpoint(ckpt_path)
 
+    # Perform KNN classification
+    batch = next(iter(dm.test_dataloader()))
+    res = model.test_step(batch, 0)['test/knn_results']
+    open(f'{args.output_directory}/cross_validation.csv', 'w').write(res)
+    # unfortunately, this appears to be broken
+    # dl = dm.predict_dataloader()
+    # batch = next(iter(dl))
+    # model.predict_step(batch, 0)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=True)
