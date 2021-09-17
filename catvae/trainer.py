@@ -255,7 +255,10 @@ class MultVAE(pl.LightningModule):
         return self.vae(X)
 
     def to_latent(self, X):
-        return self.vae.encode(X)
+        z = self.vae.encode(X)
+        if len(z) == 2:
+            return z[0]
+        return z
 
     def initialize_logging(self, root_dir='./', logging_path=None):
         if logging_path is None:
