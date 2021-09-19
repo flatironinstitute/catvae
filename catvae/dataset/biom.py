@@ -49,7 +49,7 @@ class BiomDataset(Dataset):
 
         self.batch_indices = None
         if self.batch_category is not None and self.metadata is not None:
-            batch_cats = np.unique(self.metadata[self.batch_category].values)
+            batch_cats = self.metadata[self.batch_category].unique()
             self.batch_cats = pd.Series(
                 np.arange(len(batch_cats)), index=batch_cats)
             self.batch_indices = np.array(
