@@ -24,7 +24,7 @@ def main(args):
         sample_metadata = sample_metadata.set_index(sample_metadata.columns[0])
         sample_metadata = sample_metadata.loc[table.ids()]
         n_batches = len(sample_metadata[args.batch_category].value_counts())
-        gam, phi = args.gam_prior.split(','
+        gam, phi = args.gam_prior.split(',')
         model = MultBatchVAE(
             n_input=n_input,
             n_batches=n_batches,
@@ -48,8 +48,9 @@ def main(args):
             other_model = MultVAE.load_from_checkpoint(args.load_vae_weights)
             model.vae.encoder = other_model.vae.encoder
             model.vae.decoder = other_model.vae.decoder
+            model.vae.mu_net = other_model.vae.mu_net
+            model.vae.sigma_net = other_model.vae.sigma_net
             model.vae.log_sigma_sq = other_model.vae.log_sigma_sq
-            model.vae.variational_logvars = other_model.vae.variational_logvars
             # Note that input_embed isn't handled here.
 
     print(args)

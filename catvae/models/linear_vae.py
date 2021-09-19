@@ -274,7 +274,7 @@ class LinearDLRVAE(LinearVAE):
         return recon_loss
 
 
-class LinearBatchVAE(LinearVAE):
+class LinearBatchVAE(LinearDLRVAE):
     def __init__(self, input_dim, hidden_dim, latent_dim, batch_dim,
                  beta_prior, gam_prior, phi_prior,
                  init_scale=0.001, encoder_depth=1,
@@ -331,7 +331,9 @@ class LinearBatchVAE(LinearVAE):
     def pretrained_parameters(self):
         params = list(self.encoder.parameters())
         params += list(self.decoder.parameters())
-        params += [self.log_sigma_sq, self.variational_logvars]
+        params += [self.log_sigma_sq]
+        params += list(self.mu_net.parameters())
+        params += list(self.sigma_net.parameters())
         return params
 
     def batch_parameters(self):
