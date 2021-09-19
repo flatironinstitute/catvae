@@ -141,6 +141,7 @@ class LinearVAE(nn.Module):
         if grassmannian:
             geotorch.grassmannian(self.decoder, 'weight')
         self.variational_logvars = nn.Parameter(torch.zeros(self.latent_dim))
+        self.log_sigma_sq = nn.Parameter()
         self.transform = transform
         self.distribution = distribution
         if self.transform == 'arcsine':
