@@ -24,19 +24,15 @@ def main(args):
         sample_metadata = sample_metadata.set_index(sample_metadata.columns[0])
         sample_metadata = sample_metadata.loc[table.ids()]
         n_batches = len(sample_metadata[args.batch_category].value_counts())
-
-        batch_prior = pd.read_table(args.batch_prior, index_col=0)
-        beta_prior = batch_prior['theta'].values.astype(np.float64).tolist()
-        gam_prior = batch_prior['gamma'].values.astype(np.float64).tolist()
-        phi_prior = batch_prior['phi'].values.astype(np.float64).tolist()
+        gam, phi = args.gam_prior.split(','
         model = MultBatchVAE(
             n_input=n_input,
             n_batches=n_batches,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
-            beta_prior=beta_prior,
-            gam_prior=gam_prior,
-            phi_prior=phi_prior,
+            beta_prior=args.beta_prior,
+            gam_prior=float(gam),
+            phi_prior=float(phi),
             basis=args.basis,
             dropout=args.dropout,
             bias=args.bias,
