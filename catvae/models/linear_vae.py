@@ -249,14 +249,14 @@ class LinearDLRVAE(LinearVAE):
         return z_mean, z_var
 
     def sample(self, x):
-        z_mean = self.encode(x)
-        qz = Normal(z_mean, torch.exp(0.5 * self.variational_logvars))
+        z_mean, z_var = self.encode(x)
+        qz = Normal(z_mean, torch.exp(0.5 * z_var))
         z_sample = qz.sample()
         return z_sample
 
     def forward(self, x):
-        z_mean = self.encode(x)
-        qz = Normal(z_mean, torch.exp(0.5 * self.variational_logvars))
+        z_mean, z_var = self.encode(x)
+        qz = Normal(z_mean, torch.exp(0.5 * z_var))
         ql = Normal(0, torch.exp(0.5 * self.log_sigma_sq))
         z_sample = qz.rsample()
         l_sample = ql.rsample()
