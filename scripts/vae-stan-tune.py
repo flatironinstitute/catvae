@@ -52,7 +52,7 @@ def set_basis(n_input, basis):
         f'not match tree dimension {n_input}. '
         'Also make sure if your tree if aligned correctly '
         'with `gneiss.util.match_tips`')
-    return basis
+    return np.array(basis.todense())
 
 
 def main(args):
