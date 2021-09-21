@@ -11,9 +11,10 @@ from catvae.dataset.biom import TripletDataset, TripletTestDataset
 from catvae.dataset.biom import (collate_triple_f, collate_triple_test_f,
                                  collate_single_f, collate_batch_f,
                                  collate_class_f)
-from catvae.models import LinearVAE
 from catvae.models import LinearBatchVAE
-from catvae.models import LinearDLRVAE, TripletNet
+from catvae.models import LinearVAE, LinearDLRVAE
+from catvae.models import TripletNet
+
 from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,

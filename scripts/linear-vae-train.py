@@ -70,7 +70,9 @@ def main(args):
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
-        check_val_every_n_epoch=1,
+        stochastic_weight_avg=False,
+        auto_scale_batch_size='binsearch',
+        check_val_every_n_epoch=10,
         gradient_clip_val=args.grad_clip,
         profiler=profiler,
         logger=tb_logger,
