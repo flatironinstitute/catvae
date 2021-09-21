@@ -3,7 +3,8 @@ import torch
 import pystan
 import numpy as np
 import argparse
-from catvae.trainer import LightningCatVAE, LightningLinearVAE
+from catvae.trainer import MultVAE, BiomDataModule, add_data_specific_args
+from catvae.composition import ilr_basis
 import pickle
 from biom import load_table
 
@@ -43,19 +44,37 @@ model {
 }
 """
 
+def set_basis(n_input, basis):
+    # a sneak peek into file types to initialize model
+    basis = ilr_basis(basis)
+    assert basis.shape[1] == n_input, (
+        f'Basis shape {basis.shape} does '
+        f'not match tree dimension {n_input}. '
+        'Also make sure if your tree if aligned correctly '
+        'with `gneiss.util.match_tips`')
+    return basis
+
 
 def main(args):
-    if args.model == 'catvae':
-        model = LightningCatVAE(args)
-    elif args.model == 'linear-vae':
-        model = LightningLinearVAE(args)
+
+    table = load_table(args.train_biom)
+    N, D, K = table.shape[1], table.shape[0], args.n_latent
+    psi = set_basis(D, basis=args.basis)
+    Y = np.array(table.matrix_data.todense()).T.astype(np.int64)
+    fit_data = {'N': N, 'D': D, 'K': K, 'Psi': psi, 'y': Y}
+    if args.model == 'linear-vae':
+        model = MultVAE(args)
+        checkpoint = torch.load(
+            args.torch_ckpt,
+            map_location=lambda storage, loc: storage)
+        model.load_state_dict(checkpoint['state_dict'])
+
+        W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
+        sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
+        init = [{'W': W, 'sigma': sigma}] * args.chains
+
     else:
-        raise ValueError(f'{args.model} is not supported')
-    print(model)
-    checkpoint = torch.load(
-        args.torch_ckpt,
-        map_location=lambda storage, loc: storage)
-    model.load_state_dict(checkpoint['state_dict'])
+        init = None
 
     if args.stan_model is None:
         sm = pystan.StanModel(model_code=model_code)
@@ -68,14 +87,6 @@ def main(args):
             with open(args.stan_model, 'wb') as f:
                 pickle.dump(sm, f)
 
-    W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
-    sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
-    table = load_table(args.train_biom)
-    N, D, K = table.shape[1], table.shape[0], args.n_latent
-    psi = np.array(model.set_basis(N, table).todense())
-    Y = np.array(table.matrix_data.todense()).T.astype(np.int64)
-    fit_data = {'N': N, 'D': D, 'K': K, 'Psi': psi, 'y': Y}
-    init = [{'W': W, 'sigma': sigma}] * args.chains
     if args.mode == 'hmc':
         fit = sm.sampling(data=fit_data, iter=args.iterations,
                           chains=args.chains, init=init)
@@ -96,12 +107,13 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
-    parser = LightningCatVAE.add_model_specific_args(parser)
-    parser.add_argument('--torch-ckpt', type=str, required=True,
+    parser = MultVAE.add_model_specific_args(parser)
+    parser = add_data_specific_args(parser, add_help=False)
+    parser.add_argument('--torch-ckpt', type=str, required=False,
                         help='Linear VAE checkpoint path.')
     parser.add_argument('--stan-model', type=str, default=None, required=False,
                         help='Path to compiled Stan model.')
-    parser.add_argument('--model', type=str, default='catvae', required=False)
+    parser.add_argument('--model', type=str, default='linear-vae', required=False)
     parser.add_argument('--checkpoint-interval', type=int,
                         default=100, required=False,
                         help='Number of iterations per checkpoint.')
