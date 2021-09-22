@@ -89,7 +89,7 @@ def main(args):
 
     if args.mode == 'hmc':
         fit = sm.sampling(data=fit_data, iter=args.iterations,
-                          chains=args.chains, init=init)
+                          chains=args.chains)
         print('Sampling from posterior distribution')
         # return a dictionary of arrays
         la = fit.extract(permuted=False, pars=['W', 'sigma'])
@@ -97,8 +97,7 @@ def main(args):
         with open(f'{args.output_directory}/hmc-results.pkl', 'wb') as f:
             pickle.dump(la, f)
     elif args.mode == 'mle':
-        la = sm.optimizing(data=fit_data, iter=args.iterations,
-                           init=init)
+        la = sm.optimizing(data=fit_data, iter=args.iterations)
         with open(f'{args.output_directory}/mle-results.pkl', 'wb') as f:
             pickle.dump(la, f)
     else:
