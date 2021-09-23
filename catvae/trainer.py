@@ -506,6 +506,9 @@ class MultBatchVAE(MultVAE):
         self.vae.decoder.weight = W
         self.vae.decoder.weight.requires_grad = False
 
+    def forward(self, X, b):
+        return self.vae(X, b)
+
     def to_latent(self, X, b):
         """ Casts to latent space using predicted batch probabilities.
 
@@ -654,7 +657,7 @@ class TripletVAE(pl.LightningModule):
                  learning_rate=0.001, vae_learning_rate=1e-5,
                  scheduler='cosine'):
         super().__init__()
-        self.vae = MultVAE.load_from_checkpoint(vae_model_path)
+        self.vae = MultBatchVAE.load_from_checkpoint(vae_model_path)
         n_input = self.vae.vae.decoder.in_features
         self.triplet_net = TripletNet(n_input, n_hidden, n_layers)
         self._hparams = {
@@ -665,8 +668,8 @@ class TripletVAE(pl.LightningModule):
             'vae_learning_rate': vae_learning_rate,
             'scheduler': scheduler}
 
-    def forward(self, x):
-        z = self.vae.to_latent(x)
+    def forward(self, x, b):
+        z = self.vae.to_latent(x, b)
         return self.triplet_net.encode(z)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
@@ -677,13 +680,14 @@ class TripletVAE(pl.LightningModule):
             current_lr = lr
         else:
             current_lr = self.hparams['learning_rate']
-        i_counts, j_counts, k_counts = batch
+        i_counts, j_counts, k_counts, batch_ids = batch
         i_counts = i_counts.to(self.device)
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
-        pos_u = self.vae.to_latent(i_counts)
-        pos_v = self.vae.to_latent(j_counts)
-        neg_v = self.vae.to_latent(k_counts)
+        batch_ids = batch_ids.to(self.device)
+        pos_u = self.vae.to_latent(i_counts, batch_ids)
+        pos_v = self.vae.to_latent(j_counts, batch_ids)
+        neg_v = self.vae.to_latent(k_counts, batch_ids)
         # Triplet loss
         loss = self.triplet_net(pos_u, pos_v, neg_v)
         tensorboard_logs = {
@@ -717,14 +721,19 @@ class TripletVAE(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
-            i_counts, j_counts, k_counts = batch
-            i_z = self.vae(i_counts.to(self.device))
-            j_z = self.vae(j_counts.to(self.device))
-            k_z = self.vae(k_counts.to(self.device))
+            i_counts, j_counts, k_counts, batch_idx = batch
+            i_counts = i_counts.to(self.device)
+            j_counts = j_counts.to(self.device)
+            k_counts = k_counts.to(self.device)
+            batch_idx = batch_idx.to(self.device)
+
+            i_z = self.vae(i_counts, batch_idx)[0]
+            j_z = self.vae(j_counts, batch_idx)[0]
+            k_z = self.vae(k_counts, batch_idx)[0]
             vae_loss = i_z + j_z + k_z
-            pos_u = self.vae.to_latent(i_counts)
-            pos_v = self.vae.to_latent(j_counts)
-            neg_v = self.vae.to_latent(k_counts)
+            pos_u = self.vae.to_latent(i_counts, batch_idx)
+            pos_v = self.vae.to_latent(j_counts, batch_idx)
+            neg_v = self.vae.to_latent(k_counts, batch_idx)
             # Triplet loss
             triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
             total_loss = vae_loss + triplet_loss
@@ -752,13 +761,14 @@ class TripletVAE(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         with torch.no_grad():
-            counts, labels, class_labels = batch
+            counts, batch_idx, class_labels = batch
             counts = counts.to(self.device)
-            z = self.vae.to_latent(counts).detach().cpu().numpy()
+            batch_idx = batch_idx.to(self.device)
+            z = self.vae.to_latent(counts, batch_idx).detach().cpu().numpy()
             class_labels = class_labels.detach().cpu().numpy()
-            test_model = KNeighborsClassifier(n_neighbors=5)
+            test_model = KNeighborsClassifier(n_neighbors=3)
             X_train, X_test, y_train, y_test = train_test_split(
-                z, class_labels, test_size=0.3, random_state=0)
+                z, class_labels, test_size=0.5, random_state=0)
             test_model.fit(X_train, y_train)
             y_pred = test_model.predict(X_test)
             res = classification_report(y_test, y_pred)
@@ -772,13 +782,14 @@ class TripletVAE(pl.LightningModule):
 
     def predict_step(self, batch, batch_idx):
         with torch.no_grad():
-            i_counts, j_counts, k_counts, d_dist, c_dist = batch
+            i_counts, j_counts, k_counts, d_dist, batch_idx = batch
             i_counts = i_counts.to(self.device)
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
-            pos_u = self.vae.to_latent(i_counts)
-            pos_v = self.vae.to_latent(j_counts)
-            neg_v = self.vae.to_latent(k_counts)
+            batch_idx = batch_idx.to(self.device)
+            pos_u = self.vae.to_latent(i_counts, batch_idx)
+            pos_v = self.vae.to_latent(j_counts, batch_idx)
+            neg_v = self.vae.to_latent(k_counts, batch_idx)
             pos_uv = torch.linalg.norm(pos_u - pos_v, dim=1)
             neg_uv = torch.linalg.norm(pos_u - neg_v, dim=1)
             pred_uv = (pos_uv < neg_uv).detach().cpu()
