@@ -1,6 +1,6 @@
 import os
 import argparse
-from catvae.trainer import MultVAE, TripletVAE
+from catvae.trainer import TripletVAE
 from catvae.trainer import TripletDataModule
 from catvae.trainer import add_data_specific_args
 from pytorch_lightning import Trainer
