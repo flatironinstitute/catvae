@@ -4,10 +4,8 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from patsy import dmatrix
 from numba import jit
 from sklearn.preprocessing import LabelEncoder
-from scipy.spatial.distance import euclidean
 
 
 class BiomDataset(Dataset):
