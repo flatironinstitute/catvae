@@ -789,7 +789,6 @@ class TripletVAE(pl.LightningModule):
             print(res)
             return {'test/triplet_results': res, 'log': tensorboard_logs}
 
-
     @staticmethod
     def add_model_specific_args(parent_parser, add_help=True):
         parser = argparse.ArgumentParser(parents=[parent_parser],

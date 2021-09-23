@@ -287,10 +287,10 @@ class TripletTestDataset(BiomDataset):
         self.confounder_formula = confounder_formula
         self.populate()
         self.metadata = self.metadata.set_index(self.index_name)
-        self.class_labeler = LabelEncoder().fit(self.metadata[class_category].values)
+        self.class_labeler = LabelEncoder().fit(
+            self.metadata[class_category].values)
         cc = self.class_labeler.transform(self.metadata[class_category].values)
         self.all_triples = _get_all_triples(cc)
-
 
     def __len__(self) -> int:
         return len(self.all_triples)
