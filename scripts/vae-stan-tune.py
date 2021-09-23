@@ -1,9 +1,8 @@
 import os
-import torch
 import pystan
 import numpy as np
 import argparse
-from catvae.trainer import MultVAE, BiomDataModule, add_data_specific_args
+from catvae.trainer import MultVAE, add_data_specific_args
 from catvae.composition import ilr_basis
 import pickle
 from biom import load_table
@@ -44,6 +43,7 @@ model {
 }
 """
 
+
 def set_basis(n_input, basis):
     # a sneak peek into file types to initialize model
     basis = ilr_basis(basis)
@@ -62,19 +62,16 @@ def main(args):
     psi = set_basis(D, basis=args.basis)
     Y = np.array(table.matrix_data.todense()).T.astype(np.int64)
     fit_data = {'N': N, 'D': D, 'K': K, 'Psi': psi, 'y': Y}
-    if args.model == 'linear-vae':
-        model = MultVAE(args)
-        checkpoint = torch.load(
-            args.torch_ckpt,
-            map_location=lambda storage, loc: storage)
-        model.load_state_dict(checkpoint['state_dict'])
-
-        W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
-        sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
-        init = [{'W': W, 'sigma': sigma}] * args.chains
-
-    else:
-        init = None
+    # initializalize to VAE parameters
+    # if args.model == 'linear-vae':
+    # model = MultVAE(args)
+    # checkpoint = torch.load(
+    #     args.torch_ckpt,
+    #     map_location=lambda storage, loc: storage)
+    # model.load_state_dict(checkpoint['state_dict'])
+    # W = model.model.decoder.weight.detach().cpu().numpy().squeeze()
+    # sigma = np.exp(0.5 * model.model.log_sigma_sq.detach().cpu().numpy())
+    # init = [{'W': W, 'sigma': sigma}] * args.chains
 
     if args.stan_model is None:
         sm = pystan.StanModel(model_code=model_code)
@@ -112,7 +109,8 @@ if __name__ == '__main__':
                         help='Linear VAE checkpoint path.')
     parser.add_argument('--stan-model', type=str, default=None, required=False,
                         help='Path to compiled Stan model.')
-    parser.add_argument('--model', type=str, default='linear-vae', required=False)
+    parser.add_argument('--model', type=str, default='linear-vae',
+                        required=False)
     parser.add_argument('--checkpoint-interval', type=int,
                         default=100, required=False,
                         help='Number of iterations per checkpoint.')

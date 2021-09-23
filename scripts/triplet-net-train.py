@@ -1,15 +1,12 @@
 import os
 import argparse
-import numpy as np
 from catvae.trainer import MultVAE, TripletVAE
-from catvae.trainer import BiomDataModule, TripletDataModule
+from catvae.trainer import TripletDataModule
 from catvae.trainer import add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning import loggers as pl_loggers
-from biom import load_table
-from skbio import TreeNode
 import yaml
 
 
@@ -18,7 +15,6 @@ def main(args):
     if args.load_from_checkpoint is None:
         raise ValueError('`load-from-checkpoint` should be specified.')
 
-    vae_model = MultVAE.load_from_checkpoint(args.load_from_checkpoint)
     model = TripletVAE(
         args.load_from_checkpoint,
         n_hidden=args.n_hidden, n_layers=args.n_layers,
@@ -75,6 +71,7 @@ def main(args):
     # dl = dm.predict_dataloader()
     # batch = next(iter(dl))
     # model.predict_step(batch, 0)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=True)
