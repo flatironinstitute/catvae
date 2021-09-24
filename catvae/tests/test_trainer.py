@@ -53,7 +53,8 @@ class TestVAEModel(unittest.TestCase):
         model = MultVAE(n_input=self.D, n_latent=self.k,
                         n_hidden=16, basis='basis.nwk',
                         dropout=0, bias=True, batch_norm=False,
-                        encoder_depth=1, learning_rate=0.1, overdispersion=False,
+                        encoder_depth=1, learning_rate=0.1,
+                        overdispersion=False,
                         scheduler='cosine_warm', transform='pseudocount')
         model.set_eigs(self.sims['eigvectors'], self.sims['eigs'])
         dm = BiomDataModule('train.biom', 'test.biom', 'valid.biom',
