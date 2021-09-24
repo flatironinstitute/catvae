@@ -44,7 +44,7 @@ def main(args):
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_path,
         period=1,
-        monitor='val_loss',
+        monitor='total_loss',
         mode='min',
         verbose=True)
 
