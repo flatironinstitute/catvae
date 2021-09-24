@@ -127,8 +127,9 @@ class TripletDataModule(pl.LightningDataModule):
             metadata=self.metadata,
             batch_category=self.batch_category,
             class_category=self.class_category)
+        batch_size = min(len(train_dataset) - 1, self.batch_size)
         train_dataloader = DataLoader(
-            train_dataset, batch_size=self.batch_size,
+            train_dataset, batch_size=batch_size,
             collate_fn=self.collate_f, shuffle=True,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
