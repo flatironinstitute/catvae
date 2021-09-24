@@ -48,12 +48,12 @@ class TestVAEModel(unittest.TestCase):
         os.remove('test.biom')
         os.remove('valid.biom')
 
-    @unittest.skipTest()
+    @unittest.skip('See the ipynb for a working example.')
     def test_run(self):
         model = MultVAE(n_input=self.D, n_latent=self.k,
                         n_hidden=16, basis='basis.nwk',
                         dropout=0, bias=True, batch_norm=False,
-                        encoder_depth=1, learning_rate=0.1,
+                        encoder_depth=1, learning_rate=0.1, overdispersion=False,
                         scheduler='cosine_warm', transform='pseudocount')
         model.set_eigs(self.sims['eigvectors'], self.sims['eigs'])
         dm = BiomDataModule('train.biom', 'test.biom', 'valid.biom',
@@ -106,7 +106,6 @@ class TestBatchVAEModel(unittest.TestCase):
         batch_priors.to_csv('batch_priors.txt', sep='\t')
         self.sims['tree'].write('basis.nwk')
 
-    @unittest.skipTest()
     def tearDown(self):
         os.remove('basis.nwk')
         os.remove('batch_priors.txt')
@@ -117,6 +116,7 @@ class TestBatchVAEModel(unittest.TestCase):
         if os.path.exists('lightning_logs'):
             shutil.rmtree('lightning_logs')
 
+    @unittest.skip('See the ipynb for a working example.')
     def test_fit(self):
         model = MultBatchVAE(n_input=self.D, n_latent=self.k,
                              n_hidden=16, n_batches=self.C,
