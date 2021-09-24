@@ -6,10 +6,15 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts, StepLR,
     CosineAnnealingLR)
-from catvae.dataset.biom import BiomDataset, collate_single_f, collate_batch_f
-# from catvae.models import LinearVAE,
+from catvae.dataset.biom import BiomDataset, BiomTestDataset
+from catvae.dataset.biom import TripletDataset, TripletTestDataset
+from catvae.dataset.biom import (collate_triple_f, collate_triple_test_f,
+                                 collate_single_f, collate_batch_f,
+                                 collate_class_f)
 from catvae.models import LinearBatchVAE
 from catvae.models import LinearVAE, LinearDLRVAE
+from catvae.models import TripletNet
+
 from catvae.composition import (alr_basis, ilr_basis, identity_basis, closure)
 from catvae.metrics import (
     metric_subspace, metric_pairwise,
@@ -23,6 +28,13 @@ import pandas as pd
 from scipy.sparse import coo_matrix
 import numpy as np
 import os
+
+# for sklearn metrics
+from sklearn.metrics import classification_report
+# from sklearn.metrics import confusion_matrix
+# from sklearn.svm import OneClassSVM
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split
 
 
 class BiomDataModule(pl.LightningDataModule):
@@ -58,8 +70,9 @@ class BiomDataModule(pl.LightningDataModule):
         train_dataset = BiomDataset(
             load_table(self.train_biom),
             metadata=self.metadata, batch_category=self.batch_category)
+        batch_size = min(len(train_dataset) - 1, self.batch_size)
         train_dataloader = DataLoader(
-            train_dataset, batch_size=self.batch_size,
+            train_dataset, batch_size=batch_size,
             collate_fn=self.collate_f, shuffle=True,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
@@ -87,6 +100,80 @@ class BiomDataModule(pl.LightningDataModule):
             shuffle=False, num_workers=self.num_workers,
             drop_last=True, pin_memory=True)
         return test_dataloader
+
+
+class TripletDataModule(pl.LightningDataModule):
+    def __init__(self, train_biom, test_biom, valid_biom,
+                 metadata, batch_category, class_category,
+                 confounder_formula=None, batch_size=10, num_workers=1):
+        super().__init__()
+        self.train_biom = train_biom
+        self.test_biom = test_biom
+        self.val_biom = valid_biom
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.batch_category = batch_category
+        self.class_category = class_category
+        self.confounder_formula = confounder_formula
+        self.metadata = pd.read_table(
+            metadata, dtype=str)
+        index_name = self.metadata.columns[0]
+        self.metadata = self.metadata.set_index(index_name)
+        self.collate_f = collate_triple_f
+
+    def train_dataloader(self):
+        train_dataset = TripletDataset(
+            load_table(self.train_biom),
+            metadata=self.metadata,
+            batch_category=self.batch_category,
+            class_category=self.class_category)
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=self.batch_size,
+            collate_fn=self.collate_f, shuffle=True,
+            num_workers=self.num_workers, drop_last=True,
+            pin_memory=True)
+        return train_dataloader
+
+    def val_dataloader(self):
+        val_dataset = TripletDataset(
+            load_table(self.val_biom),
+            metadata=self.metadata,
+            batch_category=self.batch_category,
+            class_category=self.class_category)
+        batch_size = min(len(val_dataset) - 1, self.batch_size)
+        val_dataloader = DataLoader(
+            val_dataset, batch_size=batch_size,
+            collate_fn=self.collate_f, shuffle=False,
+            num_workers=self.num_workers, drop_last=True,
+            pin_memory=True)
+        return val_dataloader
+
+    def test_dataloader(self):
+
+        test_dataset = BiomTestDataset(
+            load_table(self.test_biom),
+            metadata=self.metadata,
+            batch_category=self.batch_category,
+            class_category=self.class_category)
+        test_dataloader = DataLoader(
+            test_dataset, batch_size=len(test_dataset),
+            collate_fn=collate_class_f,
+            shuffle=False, num_workers=self.num_workers,
+            drop_last=False, pin_memory=True)
+        return test_dataloader
+
+    def predict_dataloader(self):
+        test2_dataset = TripletTestDataset(
+            load_table(self.test_biom),
+            metadata=self.metadata,
+            class_category=self.class_category,
+            confounder_formula=self.confounder_formula)
+        test2_dataloader = DataLoader(
+            test2_dataset, batch_size=len(test2_dataset),
+            collate_fn=collate_triple_test_f,
+            shuffle=False, num_workers=self.num_workers,
+            drop_last=False, pin_memory=True)
+        return test2_dataloader
 
 
 class MultVAE(pl.LightningModule):
@@ -169,7 +256,10 @@ class MultVAE(pl.LightningModule):
         return self.vae(X)
 
     def to_latent(self, X):
-        return self.vae.encode(X)
+        z = self.vae.encode(X)
+        if len(z) == 2:
+            return z[0]
+        return z
 
     def initialize_logging(self, root_dir='./', logging_path=None):
         if logging_path is None:
@@ -556,6 +646,174 @@ class MultBatchVAE(MultVAE):
         return parser
 
 
+class TripletVAE(pl.LightningModule):
+    def __init__(self, vae_model_path, n_hidden=64, n_layers=1,
+                 learning_rate=0.001, vae_learning_rate=1e-5,
+                 scheduler='cosine'):
+        super().__init__()
+        self.vae = MultVAE.load_from_checkpoint(vae_model_path)
+        n_input = self.vae.vae.decoder.in_features
+        self.triplet_net = TripletNet(n_input, n_hidden, n_layers)
+        self._hparams = {
+            'vae_model_path': vae_model_path,
+            'n_hidden': n_hidden,
+            'n_layers': n_layers,
+            'learning_rate': learning_rate,
+            'vae_learning_rate': vae_learning_rate,
+            'scheduler': scheduler}
+
+    def forward(self, x):
+        z = self.vae.to_latent(x)
+        return self.triplet_net.encode(z)
+
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        self.vae.train()
+        self.triplet_net.train()
+        if len(self.trainer.lr_schedulers) >= 1:
+            lr = self.trainer.lr_schedulers[0]['scheduler'].get_last_lr()[0]
+            current_lr = lr
+        else:
+            current_lr = self.hparams['learning_rate']
+        i_counts, j_counts, k_counts = batch
+        i_counts = i_counts.to(self.device)
+        j_counts = j_counts.to(self.device)
+        k_counts = k_counts.to(self.device)
+        pos_u = self.vae.to_latent(i_counts)
+        pos_v = self.vae.to_latent(j_counts)
+        neg_v = self.vae.to_latent(k_counts)
+        # Triplet loss
+        loss = self.triplet_net(pos_u, pos_v, neg_v)
+        tensorboard_logs = {
+            'lr': current_lr,
+            'train_loss': loss
+        }
+        # log the learning rate
+        return {'loss': loss, 'log': tensorboard_logs}
+
+    def configure_optimizers(self):
+        opt_g = torch.optim.Adam(
+            self.vae.parameters(),
+            lr=self.hparams['vae_learning_rate'])
+        opt_b = torch.optim.Adam(
+            self.triplet_net.parameters(),
+            lr=self.hparams['learning_rate'])
+        if self.hparams['scheduler'] == 'cosine_warm':
+            scheduler = CosineAnnealingWarmRestarts(
+                opt_g, T_0=2, T_mult=2)
+        elif self.hparams['scheduler'] == 'cosine':
+            scheduler = CosineAnnealingLR(
+                opt_g, T_max=10)
+        elif self.hparams['scheduler'] == 'none':
+            return [opt_g, opt_b]
+        else:
+            raise ValueError(
+                f'Scheduler {self.scheduler} not defined.')
+        scheduler_b = CosineAnnealingLR(
+            opt_b, T_max=100)
+        return [opt_g, opt_b], [scheduler, scheduler_b]
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            i_counts, j_counts, k_counts = batch
+            i_z = self.vae(i_counts.to(self.device))
+            j_z = self.vae(j_counts.to(self.device))
+            k_z = self.vae(k_counts.to(self.device))
+            vae_loss = i_z + j_z + k_z
+            pos_u = self.vae.to_latent(i_counts)
+            pos_v = self.vae.to_latent(j_counts)
+            neg_v = self.vae.to_latent(k_counts)
+            # Triplet loss
+            triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
+            total_loss = vae_loss + triplet_loss
+            tensorboard_logs = {
+                'val/triplet_loss': triplet_loss,
+                'val/vae_loss': vae_loss,
+                'val/total_loss': total_loss
+            }
+            # log the learning rate
+            return {'val_loss': total_loss, 'log': tensorboard_logs}
+
+    def validation_epoch_end(self, outputs):
+        metrics = ['val/vae_loss',
+                   'val/triplet_loss',
+                   'val/total_loss']
+        tensorboard_logs = {}
+        for m in metrics:
+            loss_f = lambda x: x['log'][m]
+            losses = list(map(loss_f, outputs))
+            rec_err = sum(losses) / len(losses)
+            self.logger.experiment.add_scalar(
+                m, rec_err, self.global_step)
+            tensorboard_logs[m] = rec_err
+        return {'val_loss': rec_err, 'log': tensorboard_logs}
+
+    def test_step(self, batch, batch_idx):
+        with torch.no_grad():
+            counts, labels, class_labels = batch
+            counts = counts.to(self.device)
+            z = self.vae.to_latent(counts).detach().cpu().numpy()
+            class_labels = class_labels.detach().cpu().numpy()
+            test_model = KNeighborsClassifier(n_neighbors=5)
+            X_train, X_test, y_train, y_test = train_test_split(
+                z, class_labels, test_size=0.3, random_state=0)
+            test_model.fit(X_train, y_train)
+            y_pred = test_model.predict(X_test)
+            res = classification_report(y_test, y_pred)
+            self.logger.experiment.add_text(
+                'test/knn_results', res, self.global_step)
+            tensorboard_logs = {
+                'test/knn_results': res
+            }
+            print(res)
+            return {'test/knn_results': res, 'log': tensorboard_logs}
+
+    def predict_step(self, batch, batch_idx):
+        with torch.no_grad():
+            i_counts, j_counts, k_counts, d_dist, c_dist = batch
+            i_counts = i_counts.to(self.device)
+            j_counts = j_counts.to(self.device)
+            k_counts = k_counts.to(self.device)
+            pos_u = self.vae.to_latent(i_counts)
+            pos_v = self.vae.to_latent(j_counts)
+            neg_v = self.vae.to_latent(k_counts)
+            pos_uv = torch.linalg.norm(pos_u - pos_v, dim=1)
+            neg_uv = torch.linalg.norm(pos_u - neg_v, dim=1)
+            pred_uv = (pos_uv < neg_uv).detach().cpu()
+            test_uv = d_dist
+            res = classification_report(test_uv, pred_uv)
+            self.logger.experiment.add_text(
+                'test/triplet_results', res, self.global_step)
+            tensorboard_logs = {
+                'test/triplet_results': res
+            }
+            print(res)
+            return {'test/triplet_results': res, 'log': tensorboard_logs}
+
+    @staticmethod
+    def add_model_specific_args(parent_parser, add_help=True):
+        parser = argparse.ArgumentParser(parents=[parent_parser],
+                                         add_help=add_help)
+        parser.add_argument(
+            '--n-hidden', help='Triplet embedding dimension.',
+            required=False, type=int, default=64)
+        parser.add_argument(
+            '--n-layers', help='Number of layers in triplet net.',
+            required=False, type=int, default=1)
+        parser.add_argument(
+            '--learning-rate', help='Learning rate',
+            required=False, type=float, default=1e-3)
+        parser.add_argument(
+            '--vae-lr',
+            help=('Learning rate of VAE weights'),
+            required=False, type=float, default=1e-5)
+        parser.add_argument(
+            '--scheduler',
+            help=('Learning rate scheduler '
+                  '(choices include `cosine` and `steplr`'),
+            default='cosine', required=False, type=str)
+        return parser
+
+
 def add_data_specific_args(parent_parser, add_help=True):
     parser = argparse.ArgumentParser(parents=[parent_parser],
                                      add_help=add_help)
@@ -577,11 +835,20 @@ def add_data_specific_args(parent_parser, add_help=True):
         help='Sample metadata column for class predictions.',
         required=False, type=str, default=None)
     parser.add_argument(
+        '--class-group',
+        help='Reference category for classes.',
+        required=False, type=str, default=None)
+    parser.add_argument(
+        '--confounder-formula',
+        help='R-style formula to specify confounders.',
+        required=False, type=str, default=None)
+    parser.add_argument(
         '--batch-size', help='Training batch size',
         required=False, type=int, default=32)
     # Arguments specific for trainer
     parser.add_argument(
-        '--epochs', help='Training batch size',
+        '--epochs',
+        help='Number of epochs (aka iterations) to train model.',
         required=False, type=int, default=100)
     parser.add_argument('--num-workers', type=int, default=1)
     parser.add_argument('--gpus', type=int)

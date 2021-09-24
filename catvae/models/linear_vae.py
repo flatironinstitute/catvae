@@ -38,7 +38,7 @@ class ArcsineEmbed(nn.Module):
         a = torch.arcsin(torch.sqrt(closure(x)))  # B x D
         x_ = a[:, :, None] * self.embed           # B x D x H
         fx = self.ffn(x_).squeeze()
-        fx = (Psi @ fx.T).T                         # B x D-1
+        fx = (Psi @ fx.T).T                       # B x D-1
         return fx
 
 
@@ -123,7 +123,9 @@ class LinearVAE(nn.Module):
                  dropout=0, batch_norm=False, grassmannian=True):
         super(LinearVAE, self).__init__()
         if latent_dim is None:
-            latent_dim = hidden_dim
+            self.latent_dim = hidden_dim
+        else:
+            self.latent_dim = latent_dim
         self.bias = bias
         self.hidden_dim = hidden_dim
         Psi = get_basis(input_dim, basis).coalesce()
@@ -131,14 +133,15 @@ class LinearVAE(nn.Module):
         self.input_dim = Psi.shape[0]
         self.register_buffer('Psi', Psi)
         self.encoder = Encoder(
-            self.input_dim, hidden_dim, latent_dim,
+            self.input_dim, hidden_dim, self.latent_dim,
             bias=bias, depth=encoder_depth, init_scale=init_scale,
             dropout=dropout, batch_norm=batch_norm)
         self.decoder = nn.Linear(
-            latent_dim, self.input_dim, bias=self.bias)
+            self.latent_dim, self.input_dim, bias=self.bias)
         if grassmannian:
             geotorch.grassmannian(self.decoder, 'weight')
-        self.variational_logvars = nn.Parameter(torch.zeros(latent_dim))
+        self.variational_logvars = nn.Parameter(torch.zeros(self.latent_dim))
+        self.log_sigma_sq = nn.Parameter(torch.tensor(0.0))
         self.transform = transform
         self.distribution = distribution
         if self.transform == 'arcsine':
@@ -182,7 +185,7 @@ class LinearVAE(nn.Module):
         elif self.transform == 'none':
             hx = x
         else:
-            raise ValueError(f'Unrecognzied transform {self.transform}')
+            raise ValueError(f'Unrecognized transform {self.transform}')
         return hx
 
     def sample(self, x, size=None):
@@ -234,23 +237,34 @@ class LinearDLRVAE(LinearVAE):
             encoder_depth=encoder_depth,
             bias=bias, transform=transform, dropout=dropout,
             batch_norm=batch_norm, grassmannian=grassmannian)
+
+        self.sigma_net = nn.Linear(self.latent_dim, self.latent_dim, bias=True)
+        self.mu_net = nn.Linear(self.latent_dim, self.latent_dim, bias=True)
         self.log_sigma_sq = nn.Parameter(torch.ones(input_dim - 1))
 
+    def encode(self, x):
+        N = torch.log(x.sum(axis=-1)).view(-1, 1)
+        hx = self.impute(x)
+        zh = self.encoder(hx)
+        z_mean = self.mu_net(zh)
+        z_var = self.sigma_net(zh)  # logvars
+        z_var = z_var - N  # var / N
+        return z_mean, z_var
+
     def sample(self, x):
-        z_mean = self.encode(x)
+        z_mean, z_var = self.encode(x)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
-        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        z_sample = z_mean + eps * torch.exp(0.5 * z_var)
         return z_sample
 
     def forward(self, x):
-        z_mean = self.encode(x)
+        z_mean, z_var = self.encode(x)
         eps = torch.normal(torch.zeros_like(z_mean), 1.0)
-        z_sample = z_mean + eps * torch.exp(0.5 * self.variational_logvars)
+        z_sample = z_mean + eps * torch.exp(0.5 * z_var)
         x_out = self.decoder(z_sample)
         delta = torch.normal(torch.zeros_like(x_out), 1.0)
         x_out += delta * torch.exp(0.5 * self.log_sigma_sq)
-        kl_div = self.gaussian_kl(
-            z_mean, self.variational_logvars).mean(0).sum()
+        kl_div = self.gaussian_kl(z_mean, z_var).mean(0).sum()
         recon_loss = self.recon_model_loglik(x, x_out).mean(0).sum()
         elbo = kl_div + recon_loss
         loss = - elbo
