@@ -690,7 +690,14 @@ class TripletVAE(pl.LightningModule):
         pos_v = self.vae.to_latent(j_counts, batch_ids)
         neg_v = self.vae.to_latent(k_counts, batch_ids)
         # Triplet loss
-        loss = self.triplet_net(pos_u, pos_v, neg_v)
+        triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
+        # VAE loss
+        i_z = self.vae(i_counts, batch_ids)[0]
+        j_z = self.vae(j_counts, batch_ids)[0]
+        k_z = self.vae(k_counts, batch_ids)[0]
+        vae_loss = i_z + j_z + k_z
+
+        loss = vae_loss + triplet_loss
         tensorboard_logs = {
             'lr': current_lr,
             'train_loss': loss
@@ -741,7 +748,8 @@ class TripletVAE(pl.LightningModule):
             tensorboard_logs = {
                 'val/triplet_loss': triplet_loss,
                 'val/vae_loss': vae_loss,
-                'val/total_loss': total_loss
+                'val/total_loss': total_loss,
+                'val_loss' : total_loss
             }
             # log the learning rate
             return {'val_loss': total_loss, 'log': tensorboard_logs}
@@ -758,6 +766,14 @@ class TripletVAE(pl.LightningModule):
             self.logger.experiment.add_scalar(
                 m, rec_err, self.global_step)
             tensorboard_logs[m] = rec_err
+
+        loss_f = lambda x: x['log']['val_loss']
+        losses = list(map(loss_f, outputs))
+        loss = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val_loss',
+                                          loss, self.global_step)
+        self.log('val_loss', loss)
+
         return {'val_loss': rec_err, 'log': tensorboard_logs}
 
     def test_step(self, batch, batch_idx):

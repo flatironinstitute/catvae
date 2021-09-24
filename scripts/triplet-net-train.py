@@ -37,16 +37,12 @@ def main(args):
         batch_category=args.batch_category,
         class_category=args.class_category,
         batch_size=args.batch_size, num_workers=args.num_workers)
-
-    ckpt_path = os.path.join(
-        args.output_directory,
-        "checkpoints")
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=ckpt_path,
-        period=1,
-        monitor='total_loss',
-        mode='min',
-        verbose=True)
+    ckpt_path = os.path.join(args.output_directory, "checkpoints")
+    checkpoint_callback = ModelCheckpoint(dirpath=ckpt_path,
+                                          period=1,
+                                          monitor='val_loss',
+                                          mode='min',
+                                          verbose=True)
 
     os.mkdir(args.output_directory)
     tb_logger = pl_loggers.TensorBoardLogger(f'{args.output_directory}/logs/')
@@ -57,7 +53,7 @@ def main(args):
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
-        check_val_every_n_epoch=1,
+        check_val_every_n_epoch=5,
         gradient_clip_val=args.grad_clip,
         profiler=profiler,
         logger=tb_logger,
