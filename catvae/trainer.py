@@ -756,7 +756,6 @@ class TripletVAE(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         metrics = ['val/vae_loss',
-                   'val/triplet_loss',
                    'val/total_loss']
         tensorboard_logs = {}
         for m in metrics:
@@ -772,7 +771,16 @@ class TripletVAE(pl.LightningModule):
         loss = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_loss',
                                           loss, self.global_step)
+
+
+        loss_f = lambda x: x['log']['val/triplet_loss']
+        losses = list(map(loss_f, outputs))
+        loss = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val/triplet_loss',
+                                          loss, self.global_step)
+
         self.log('val_loss', loss)
+        self.log('val/triplet_loss', loss)
 
         return {'val_loss': rec_err, 'log': tensorboard_logs}
 
@@ -789,8 +797,6 @@ class TripletVAE(pl.LightningModule):
             test_model.fit(X_train, y_train)
             y_pred = test_model.predict(X_test)
             res = classification_report(y_test, y_pred)
-            self.logger.experiment.add_text(
-                'test/knn_results', res, self.global_step)
             tensorboard_logs = {
                 'test/knn_results': res
             }

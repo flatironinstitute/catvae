@@ -40,7 +40,7 @@ def main(args):
     ckpt_path = os.path.join(args.output_directory, "checkpoints")
     checkpoint_callback = ModelCheckpoint(dirpath=ckpt_path,
                                           period=1,
-                                          monitor='val_loss',
+                                          monitor='val/triplet_loss',
                                           mode='min',
                                           verbose=True)
 
@@ -53,7 +53,7 @@ def main(args):
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
-        check_val_every_n_epoch=5,
+        check_val_every_n_epoch=10,
         gradient_clip_val=args.grad_clip,
         profiler=profiler,
         logger=tb_logger,

@@ -235,27 +235,25 @@ class LinearDLRVAE(LinearVAE):
             bias=bias, transform=transform, dropout=dropout,
             batch_norm=batch_norm, grassmannian=grassmannian)
 
-        self.sigma_net = nn.Linear(self.latent_dim, self.latent_dim, bias=True)
-        self.mu_net = nn.Linear(self.latent_dim, self.latent_dim, bias=True)
         self.log_sigma_sq = nn.Parameter(torch.ones(input_dim - 1))
 
     def encode(self, x):
-        N = torch.log(x.sum(axis=-1)).view(-1, 1)
         hx = self.impute(x)
         zh = self.encoder(hx)
-        z_mean = self.mu_net(zh)
-        z_var = self.sigma_net(zh)  # logvars
-        z_var = z_var - N  # var / N
-        return z_mean, z_var
+        return z_mean
 
     def sample(self, x):
-        z_mean, z_var = self.encode(x)
+        logN = torch.log(x.sum(axis=-1)).view(-1, 1)
+        z_mean = self.encode(x)
+        z_var = self.variational_logvars - logN
         qz = Normal(z_mean, torch.exp(0.5 * z_var))
         z_sample = qz.sample()
         return z_sample
 
     def forward(self, x):
-        z_mean, z_var = self.encode(x)
+        logN = torch.log(x.sum(axis=-1)).view(-1, 1)
+        z_mean = self.encode(x)
+        z_var = self.variational_logvars - logN
         qz = Normal(z_mean, torch.exp(0.5 * z_var))
         ql = Normal(0, torch.exp(0.5 * self.log_sigma_sq))
         z_sample = qz.rsample()
@@ -331,9 +329,7 @@ class LinearBatchVAE(LinearDLRVAE):
     def pretrained_parameters(self):
         params = list(self.encoder.parameters())
         params += list(self.decoder.parameters())
-        params += [self.log_sigma_sq]
-        params += list(self.mu_net.parameters())
-        params += list(self.sigma_net.parameters())
+        params += [self.log_sigma_sq, self.variational_logvars]
         return params
 
     def batch_parameters(self):
@@ -383,10 +379,12 @@ class LinearBatchVAE(LinearDLRVAE):
         return qz.sample(size)
 
     def forward(self, x, b):
+        logN = torch.log(x.sum(axis=-1)).view(-1, 1)
         z_mean = self.encode(x, b)
+        z_var = self.variational_logvars - logN
         gam = F.softplus(self.loggamma(b), beta=0.1)
         phi = F.softplus(self.logphi(b), beta=0.1)
-        qz = Normal(z_mean, torch.exp(0.5 * self.variational_logvars))
+        qz = Normal(z_mean, torch.exp(0.5 * z_var))
         ql = Normal(0, torch.exp(0.5 * self.log_sigma_sq))
         qb = Normal(self.beta(b), torch.exp(0.5 * self.beta_logvars(b)))
         qS = Gamma(gam, phi)
@@ -406,9 +404,11 @@ class LinearBatchVAE(LinearDLRVAE):
         return loss, -recon_loss, kl_div_z, kl_div_b, kl_div_S
 
     def get_reconstruction_loss(self, x, b):
+        logN = torch.log(x.sum(axis=-1)).view(-1, 1)
         z_mean = self.encode(x, b)
+        z_var = self.variational_logvars - logN
         batch_effects = self.beta(b)
-        qz = Normal(z_mean, torch.exp(0.5 * self.variational_logvars))
+        qz = Normal(z_mean, torch.exp(0.5 * z_var))
         qb = Normal(batch_effects, torch.exp(0.5 * self.batch_logvars))
         z_sample = qz.sample()
         b_sample = qb.sample()
