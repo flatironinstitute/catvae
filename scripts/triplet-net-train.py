@@ -36,6 +36,7 @@ def main(args):
         metadata=args.sample_metadata,
         batch_category=args.batch_category,
         class_category=args.class_category,
+        segment_triples=args.segment_triples,
         batch_size=args.batch_size, num_workers=args.num_workers)
     ckpt_path = os.path.join(args.output_directory, "checkpoints")
     checkpoint_callback = ModelCheckpoint(dirpath=ckpt_path,
