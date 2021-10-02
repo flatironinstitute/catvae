@@ -26,6 +26,8 @@ class BiomDataset(Dataset):
             metadata: pd.DataFrame = None,
             batch_category: str = None):
         super(BiomDataset).__init__()
+        if np.any(table.sum(axis='sample') <= 0):
+            ValueError('Biom table has zero counts.')
         self.table = table
         self.metadata = metadata
         self.batch_category = batch_category
