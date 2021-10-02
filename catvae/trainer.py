@@ -105,7 +105,8 @@ class BiomDataModule(pl.LightningDataModule):
 class TripletDataModule(pl.LightningDataModule):
     def __init__(self, train_biom, test_biom, valid_biom,
                  metadata, batch_category, class_category,
-                 confounder_formula=None, batch_size=10, num_workers=1):
+                 segment_triples=True, confounder_formula=None,
+                 batch_size=10, num_workers=1):
         super().__init__()
         self.train_biom = train_biom
         self.test_biom = test_biom
@@ -115,6 +116,7 @@ class TripletDataModule(pl.LightningDataModule):
         self.batch_category = batch_category
         self.class_category = class_category
         self.confounder_formula = confounder_formula
+        self.segment_triples = segment_triples
         self.metadata = pd.read_table(
             metadata, dtype=str)
         index_name = self.metadata.columns[0]
@@ -126,7 +128,8 @@ class TripletDataModule(pl.LightningDataModule):
             load_table(self.train_biom),
             metadata=self.metadata,
             batch_category=self.batch_category,
-            class_category=self.class_category)
+            class_category=self.class_category,
+            segment_by_batch = self.segment_triples)
         batch_size = min(len(train_dataset) - 1, self.batch_size)
         train_dataloader = DataLoader(
             train_dataset, batch_size=batch_size,
@@ -140,7 +143,8 @@ class TripletDataModule(pl.LightningDataModule):
             load_table(self.val_biom),
             metadata=self.metadata,
             batch_category=self.batch_category,
-            class_category=self.class_category)
+            class_category=self.class_category,
+            segment_by_batch = self.segment_triples)
         batch_size = min(len(val_dataset) - 1, self.batch_size)
         val_dataloader = DataLoader(
             val_dataset, batch_size=batch_size,
@@ -168,7 +172,8 @@ class TripletDataModule(pl.LightningDataModule):
             load_table(self.test_biom),
             metadata=self.metadata,
             class_category=self.class_category,
-            confounder_formula=self.confounder_formula)
+            confounder_formula=self.confounder_formula,
+            segment_by_batch = self.segment_triples)
         test2_dataloader = DataLoader(
             test2_dataset, batch_size=len(test2_dataset),
             collate_fn=collate_triple_test_f,
@@ -800,7 +805,6 @@ class TripletVAE(pl.LightningModule):
             tensorboard_logs = {
                 'test/knn_results': res
             }
-            print(res)
             return {'test/knn_results': res, 'log': tensorboard_logs}
 
     def predict_step(self, batch, batch_idx):
@@ -864,6 +868,14 @@ def add_data_specific_args(parent_parser, add_help=True):
         '--val-biom', help='Validation biom file', required=True)
     parser.add_argument(
         '--sample-metadata', help='Sample metadata file', required=False)
+    parser.add_argument('--segment-triples', dest='segment_triples',
+                        action='store_true',
+                        help='Only computes triples within batch.')
+    parser.add_argument('--no-segment-triples', dest='segment_triples',
+                        action='store_false',
+                        help='Computes triples across whole dataset.')
+    # https://stackoverflow.com/a/15008806/1167475
+    parser.set_defaults(bias=True)
     parser.add_argument(
         '--batch-category',
         help='Sample metadata column for batch effects.',

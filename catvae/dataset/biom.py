@@ -221,7 +221,8 @@ class TripletDataset(BiomDataset):
             table: biom.Table,
             metadata: pd.DataFrame,
             class_category: str,
-            batch_category: str):
+            batch_category: str,
+            segment_by_batch: bool = False):
         super(TripletDataset).__init__()
         self.table = table
         self.metadata = metadata
@@ -229,8 +230,11 @@ class TripletDataset(BiomDataset):
         self.class_category = class_category
         self.populate()
         self.metadata = self.metadata.set_index(self.index_name)
-        self.batch_dict = dict(list(
-            self.metadata.groupby(self.batch_category)))
+        if segment_by_batch:
+            self.batch_dict = dict(list(
+                self.metadata.groupby(self.batch_category)))
+        else:
+            self.batch_dict = None
 
     def __len__(self) -> int:
         return len(self.table.ids())
@@ -251,7 +255,11 @@ class TripletDataset(BiomDataset):
         else:
             batch_indices = None
         b = self.metadata.iloc[i][self.batch_category]
-        batch_group = self.batch_dict[b]
+        if self.batch_dict:
+            batch_group = self.batch_dict[b]
+        else:
+            batch_group = pd.DataFrame({
+                self.class_category: self.metadata[self.class_category]})
         i, j, k = _get_triplet(batch_group, self.class_category)
         i_counts = self.table.data(i, axis='sample')
         j_counts = self.table.data(j, axis='sample')
@@ -291,8 +299,10 @@ class TripletTestDataset(BiomDataset):
         self.confounder_formula = confounder_formula
         self.populate()
         self.metadata = self.metadata.set_index(self.index_name)
-        self.class_labeler = LabelEncoder().fit(self.metadata[class_category].values)
-        cc = self.class_labeler.transform(self.metadata[class_category].values)
+        self.class_labeler = LabelEncoder().fit(
+            self.metadata[class_category].values)
+        cc = self.class_labeler.transform(
+            self.metadata[class_category].values)
         self.all_triples = _get_all_triples(cc)
 
 
