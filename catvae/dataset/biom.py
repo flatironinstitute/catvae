@@ -4,10 +4,8 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from patsy import dmatrix
 from numba import jit
 from sklearn.preprocessing import LabelEncoder
-from scipy.spatial.distance import euclidean
 
 
 class BiomDataset(Dataset):
@@ -304,7 +302,6 @@ class TripletTestDataset(BiomDataset):
         cc = self.class_labeler.transform(
             self.metadata[class_category].values)
         self.all_triples = _get_all_triples(cc)
-
 
     def __len__(self) -> int:
         return len(self.all_triples)
