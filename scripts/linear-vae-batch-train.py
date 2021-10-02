@@ -48,7 +48,6 @@ def main(args):
             other_model = MultVAE.load_from_checkpoint(args.load_vae_weights)
             model.vae.encoder = other_model.vae.encoder
             model.vae.decoder = other_model.vae.decoder
-            model.vae.mu_net = other_model.vae.mu_net
             model.vae.sigma_net = other_model.vae.sigma_net
             model.vae.log_sigma_sq = other_model.vae.log_sigma_sq
             # Note that input_embed isn't handled here.
@@ -94,7 +93,7 @@ def main(args):
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
-        check_val_every_n_epoch=1,
+        check_val_every_n_epoch=10,
         gradient_clip_val=args.grad_clip,
         profiler=profiler,
         logger=tb_logger,
