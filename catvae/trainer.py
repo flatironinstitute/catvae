@@ -26,13 +26,10 @@ import pytorch_lightning as pl
 from biom import load_table
 import pandas as pd
 from scipy.sparse import coo_matrix
-import numpy as np
 import os
 
 # for sklearn metrics
 from sklearn.metrics import classification_report
-# from sklearn.metrics import confusion_matrix
-# from sklearn.svm import OneClassSVM
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 
@@ -105,7 +102,8 @@ class BiomDataModule(pl.LightningDataModule):
 class TripletDataModule(pl.LightningDataModule):
     def __init__(self, train_biom, test_biom, valid_biom,
                  metadata, batch_category, class_category,
-                 confounder_formula=None, batch_size=10, num_workers=1):
+                 segment_triples=True, confounder_formula=None,
+                 batch_size=10, num_workers=1):
         super().__init__()
         self.train_biom = train_biom
         self.test_biom = test_biom
@@ -115,6 +113,7 @@ class TripletDataModule(pl.LightningDataModule):
         self.batch_category = batch_category
         self.class_category = class_category
         self.confounder_formula = confounder_formula
+        self.segment_triples = segment_triples
         self.metadata = pd.read_table(
             metadata, dtype=str)
         index_name = self.metadata.columns[0]
@@ -126,9 +125,11 @@ class TripletDataModule(pl.LightningDataModule):
             load_table(self.train_biom),
             metadata=self.metadata,
             batch_category=self.batch_category,
-            class_category=self.class_category)
+            class_category=self.class_category,
+            segment_by_batch=self.segment_triples)
+        batch_size = min(len(train_dataset) - 1, self.batch_size)
         train_dataloader = DataLoader(
-            train_dataset, batch_size=self.batch_size,
+            train_dataset, batch_size=batch_size,
             collate_fn=self.collate_f, shuffle=True,
             num_workers=self.num_workers, drop_last=True,
             pin_memory=True)
@@ -139,7 +140,8 @@ class TripletDataModule(pl.LightningDataModule):
             load_table(self.val_biom),
             metadata=self.metadata,
             batch_category=self.batch_category,
-            class_category=self.class_category)
+            class_category=self.class_category,
+            segment_by_batch=self.segment_triples)
         batch_size = min(len(val_dataset) - 1, self.batch_size)
         val_dataloader = DataLoader(
             val_dataset, batch_size=batch_size,
@@ -167,7 +169,8 @@ class TripletDataModule(pl.LightningDataModule):
             load_table(self.test_biom),
             metadata=self.metadata,
             class_category=self.class_category,
-            confounder_formula=self.confounder_formula)
+            confounder_formula=self.confounder_formula,
+            segment_by_batch=self.segment_triples)
         test2_dataloader = DataLoader(
             test2_dataset, batch_size=len(test2_dataset),
             collate_fn=collate_triple_test_f,
@@ -421,10 +424,10 @@ class MultVAE(pl.LightningModule):
         parser.set_defaults(overdispersion=True)
         parser.add_argument(
             '--no-grassmannian',
-            help=('Specifies if grassmanian manifold optimization '
+            help=('Specifies if grassmannian manifold optimization '
                   'is disabled. Turning this off will remove unit norm '
                   'constraint on decoder weights. '),
-            required=False, dest='grassmanian', action='store_false')
+            required=False, dest='grassmannian', action='store_false')
         parser.set_defaults(grassmannian=True)
         parser.add_argument(
             '--distribution',
@@ -441,9 +444,9 @@ class MultVAE(pl.LightningModule):
 
 # Batch correction methods
 class MultBatchVAE(MultVAE):
-    def __init__(self, n_input, batch_prior, n_batches,
-                 n_latent=32, n_hidden=64, basis=None,
-                 dropout=0, bias=True, batch_norm=False,
+    def __init__(self, n_input, n_batches, n_latent=32, n_hidden=64,
+                 beta_prior=None, gam_prior=None, phi_prior=None,
+                 basis=None, dropout=0, bias=True, batch_norm=False,
                  encoder_depth=1, learning_rate=0.001, vae_lr=0.001,
                  scheduler='cosine', distribution='multinomial',
                  transform='pseudocount', grassmannian=True):
@@ -456,13 +459,15 @@ class MultBatchVAE(MultVAE):
             'n_input': n_input,
             'n_latent': n_latent,
             'n_hidden': n_hidden,
+            'beta_prior': beta_prior,
+            'gam_prior': gam_prior,
+            'phi_prior': phi_prior,
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
             'batch_norm': batch_norm,
             'encoder_depth': encoder_depth,
             'n_batches': n_batches,
-            'batch_prior': batch_prior,
             'learning_rate': learning_rate,
             'vae_lr': vae_lr,
             'scheduler': scheduler,
@@ -473,11 +478,6 @@ class MultBatchVAE(MultVAE):
         self.gt_eigvectors = None
         self.gt_eigs = None
 
-        batch_prior = pd.read_table(batch_prior, dtype=str)
-        batch_prior = batch_prior.set_index(batch_prior.columns[0])
-        batch_prior = batch_prior.values.astype(np.float64)
-        batch_prior = batch_prior.reshape(1, -1).squeeze()
-        batch_prior = torch.Tensor(batch_prior).float()
         basis = self.set_basis(n_input, basis)
         self.vae = LinearBatchVAE(
             n_input,
@@ -485,7 +485,9 @@ class MultBatchVAE(MultVAE):
             latent_dim=n_latent,
             batch_dim=n_batches,
             batch_norm=batch_norm,
-            batch_prior=batch_prior,
+            beta_prior=torch.Tensor([beta_prior]).float(),
+            gam_prior=torch.Tensor([gam_prior]).float(),
+            phi_prior=torch.Tensor([phi_prior]).float(),
             basis=basis,
             encoder_depth=encoder_depth,
             bias=bias,
@@ -506,6 +508,9 @@ class MultBatchVAE(MultVAE):
         # https://github.com/Lezcano/geotorch/issues/14
         self.vae.decoder.weight = W
         self.vae.decoder.weight.requires_grad = False
+
+    def forward(self, X, b):
+        return self.vae(X, b)
 
     def to_latent(self, X, b):
         """ Casts to latent space using predicted batch probabilities.
@@ -543,7 +548,7 @@ class MultBatchVAE(MultVAE):
         batch_ids = batch_ids.to(self.device)
         self.vae.train()
         losses = self.vae(counts, batch_ids)
-        loss, recon_loss, kl_div_z, kl_div_b = losses
+        loss, recon_loss, kl_div_z, kl_div_b, kl_div_S = losses
         assert torch.isnan(loss).item() is False
         tensorboard_logs = {
             'lr': current_lr, 'train_loss': loss
@@ -552,27 +557,25 @@ class MultBatchVAE(MultVAE):
         return {'loss': loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        encode_params = self.vae.encoder.parameters()
-        decode_params = self.vae.decoder.parameters()
         opt_g = torch.optim.AdamW(
-            list(encode_params) + list(decode_params),
+            self.vae.pretrained_parameters(),
             lr=self.hparams['vae_lr'], weight_decay=0)
         opt_b = torch.optim.AdamW(
-            list(self.vae.beta.parameters()) + [self.vae.batch_logvars],
+            self.vae.batch_parameters(),
             lr=self.hparams['learning_rate'], weight_decay=0.001)
         if self.hparams['scheduler'] == 'cosine_warm':
-            scheduler = CosineAnnealingWarmRestarts(
-                opt_g, T_0=2, T_mult=2)
+            scheduler_b = CosineAnnealingWarmRestarts(
+                opt_b, T_0=2, T_mult=2)
         elif self.hparams['scheduler'] == 'cosine':
-            scheduler = CosineAnnealingLR(
-                opt_g, T_max=10)
+            scheduler_b = CosineAnnealingLR(
+                opt_b, T_max=11)
         elif self.hparams['scheduler'] == 'none':
             return [opt_g, opt_b]
         else:
             raise ValueError(
                 f'Scheduler {self.scheduler} not defined.')
-        scheduler_b = CosineAnnealingLR(
-            opt_b, T_max=10)
+        scheduler = CosineAnnealingWarmRestarts(
+            opt_g, T_0=3, T_mult=3)
         return [opt_g, opt_b], [scheduler, scheduler_b]
 
     def validation_step(self, batch, batch_idx):
@@ -581,13 +584,14 @@ class MultBatchVAE(MultVAE):
             counts = counts.to(self.device)
             batch_ids = batch_ids.to(self.device)
             losses = self.vae(counts, batch_ids)
-            loss, rec_err, kl_div_z, kl_div_b = losses
+            loss, rec_err, kl_div_z, kl_div_b, kl_div_S = losses
             assert torch.isnan(loss).item() is False
             # Record the actual loss.
             tensorboard_logs = {'val_loss': loss,
                                 'val/recon_loss': rec_err,
                                 'val/kl_div_z': kl_div_z,
                                 'val/kl_div_b': kl_div_b,
+                                'val/kl_div_S': kl_div_S,
                                 'val_rec_err': rec_err}
             # log the learning rate
             return {'val_loss': loss, 'log': tensorboard_logs}
@@ -597,6 +601,7 @@ class MultBatchVAE(MultVAE):
                    'val/recon_loss',
                    'val/kl_div_z',
                    'val/kl_div_b',
+                   'val/kl_div_S',
                    'val_rec_err']
         tensorboard_logs = {}
         for m in metrics:
@@ -631,10 +636,13 @@ class MultBatchVAE(MultVAE):
         parser = MultVAE.add_model_specific_args(
             parent_parser, add_help=add_help)
         parser.add_argument(
-            '--batch-prior',
-            help=('Pre-learned batch effect priors'
-                  '(must have same number of dimensions as `train-biom`)'),
-            required=True, type=str, default=None)
+            '--beta-prior',
+            help=('Prior for mean of beta.'),
+            required=True, type=float, default='1')
+        parser.add_argument(
+            '--gam-prior',
+            help=('Gamma prior for std of beta (comma delimited)'),
+            required=True, type=str, default='1,1')
         parser.add_argument(
             '--load-vae-weights',
             help=('Pre-trained linear VAE weights.'),
@@ -651,7 +659,7 @@ class TripletVAE(pl.LightningModule):
                  learning_rate=0.001, vae_learning_rate=1e-5,
                  scheduler='cosine'):
         super().__init__()
-        self.vae = MultVAE.load_from_checkpoint(vae_model_path)
+        self.vae = MultBatchVAE.load_from_checkpoint(vae_model_path)
         n_input = self.vae.vae.decoder.in_features
         self.triplet_net = TripletNet(n_input, n_hidden, n_layers)
         self._hparams = {
@@ -662,8 +670,8 @@ class TripletVAE(pl.LightningModule):
             'vae_learning_rate': vae_learning_rate,
             'scheduler': scheduler}
 
-    def forward(self, x):
-        z = self.vae.to_latent(x)
+    def forward(self, x, b):
+        z = self.vae.to_latent(x, b)
         return self.triplet_net.encode(z)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
@@ -674,15 +682,23 @@ class TripletVAE(pl.LightningModule):
             current_lr = lr
         else:
             current_lr = self.hparams['learning_rate']
-        i_counts, j_counts, k_counts = batch
+        i_counts, j_counts, k_counts, batch_ids = batch
         i_counts = i_counts.to(self.device)
         j_counts = j_counts.to(self.device)
         k_counts = k_counts.to(self.device)
-        pos_u = self.vae.to_latent(i_counts)
-        pos_v = self.vae.to_latent(j_counts)
-        neg_v = self.vae.to_latent(k_counts)
+        batch_ids = batch_ids.to(self.device)
+        pos_u = self.vae.to_latent(i_counts, batch_ids)
+        pos_v = self.vae.to_latent(j_counts, batch_ids)
+        neg_v = self.vae.to_latent(k_counts, batch_ids)
         # Triplet loss
-        loss = self.triplet_net(pos_u, pos_v, neg_v)
+        triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
+        # VAE loss
+        i_z = self.vae(i_counts, batch_ids)[0]
+        j_z = self.vae(j_counts, batch_ids)[0]
+        k_z = self.vae(k_counts, batch_ids)[0]
+        vae_loss = i_z + j_z + k_z
+
+        loss = vae_loss + triplet_loss
         tensorboard_logs = {
             'lr': current_lr,
             'train_loss': loss
@@ -714,28 +730,33 @@ class TripletVAE(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
-            i_counts, j_counts, k_counts = batch
-            i_z = self.vae(i_counts.to(self.device))
-            j_z = self.vae(j_counts.to(self.device))
-            k_z = self.vae(k_counts.to(self.device))
+            i_counts, j_counts, k_counts, batch_idx = batch
+            i_counts = i_counts.to(self.device)
+            j_counts = j_counts.to(self.device)
+            k_counts = k_counts.to(self.device)
+            batch_idx = batch_idx.to(self.device)
+
+            i_z = self.vae(i_counts, batch_idx)[0]
+            j_z = self.vae(j_counts, batch_idx)[0]
+            k_z = self.vae(k_counts, batch_idx)[0]
             vae_loss = i_z + j_z + k_z
-            pos_u = self.vae.to_latent(i_counts)
-            pos_v = self.vae.to_latent(j_counts)
-            neg_v = self.vae.to_latent(k_counts)
+            pos_u = self.vae.to_latent(i_counts, batch_idx)
+            pos_v = self.vae.to_latent(j_counts, batch_idx)
+            neg_v = self.vae.to_latent(k_counts, batch_idx)
             # Triplet loss
             triplet_loss = self.triplet_net(pos_u, pos_v, neg_v)
             total_loss = vae_loss + triplet_loss
             tensorboard_logs = {
                 'val/triplet_loss': triplet_loss,
                 'val/vae_loss': vae_loss,
-                'val/total_loss': total_loss
+                'val/total_loss': total_loss,
+                'val_loss': total_loss
             }
             # log the learning rate
             return {'val_loss': total_loss, 'log': tensorboard_logs}
 
     def validation_epoch_end(self, outputs):
         metrics = ['val/vae_loss',
-                   'val/triplet_loss',
                    'val/total_loss']
         tensorboard_logs = {}
         for m in metrics:
@@ -745,37 +766,52 @@ class TripletVAE(pl.LightningModule):
             self.logger.experiment.add_scalar(
                 m, rec_err, self.global_step)
             tensorboard_logs[m] = rec_err
+
+        loss_f = lambda x: x['log']['val_loss']
+        losses = list(map(loss_f, outputs))
+        loss = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val_loss',
+                                          loss, self.global_step)
+
+        loss_f = lambda x: x['log']['val/triplet_loss']
+        losses = list(map(loss_f, outputs))
+        loss = sum(losses) / len(losses)
+        self.logger.experiment.add_scalar('val/triplet_loss',
+                                          loss, self.global_step)
+
+        self.log('val_loss', loss)
+        self.log('val/triplet_loss', loss)
+
         return {'val_loss': rec_err, 'log': tensorboard_logs}
 
     def test_step(self, batch, batch_idx):
         with torch.no_grad():
-            counts, labels, class_labels = batch
+            counts, batch_idx, class_labels = batch
             counts = counts.to(self.device)
-            z = self.vae.to_latent(counts).detach().cpu().numpy()
+            batch_idx = batch_idx.to(self.device)
+            z = self.vae.to_latent(counts, batch_idx).detach().cpu().numpy()
             class_labels = class_labels.detach().cpu().numpy()
-            test_model = KNeighborsClassifier(n_neighbors=5)
+            test_model = KNeighborsClassifier(n_neighbors=3)
             X_train, X_test, y_train, y_test = train_test_split(
-                z, class_labels, test_size=0.3, random_state=0)
+                z, class_labels, test_size=0.5, random_state=0)
             test_model.fit(X_train, y_train)
             y_pred = test_model.predict(X_test)
             res = classification_report(y_test, y_pred)
-            self.logger.experiment.add_text(
-                'test/knn_results', res, self.global_step)
             tensorboard_logs = {
                 'test/knn_results': res
             }
-            print(res)
             return {'test/knn_results': res, 'log': tensorboard_logs}
 
     def predict_step(self, batch, batch_idx):
         with torch.no_grad():
-            i_counts, j_counts, k_counts, d_dist, c_dist = batch
+            i_counts, j_counts, k_counts, d_dist, batch_idx = batch
             i_counts = i_counts.to(self.device)
             j_counts = j_counts.to(self.device)
             k_counts = k_counts.to(self.device)
-            pos_u = self.vae.to_latent(i_counts)
-            pos_v = self.vae.to_latent(j_counts)
-            neg_v = self.vae.to_latent(k_counts)
+            batch_idx = batch_idx.to(self.device)
+            pos_u = self.vae.to_latent(i_counts, batch_idx)
+            pos_v = self.vae.to_latent(j_counts, batch_idx)
+            neg_v = self.vae.to_latent(k_counts, batch_idx)
             pos_uv = torch.linalg.norm(pos_u - pos_v, dim=1)
             neg_uv = torch.linalg.norm(pos_u - neg_v, dim=1)
             pred_uv = (pos_uv < neg_uv).detach().cpu()
@@ -826,6 +862,14 @@ def add_data_specific_args(parent_parser, add_help=True):
         '--val-biom', help='Validation biom file', required=True)
     parser.add_argument(
         '--sample-metadata', help='Sample metadata file', required=False)
+    parser.add_argument('--segment-triples', dest='segment_triples',
+                        action='store_true',
+                        help='Only computes triples within batch.')
+    parser.add_argument('--no-segment-triples', dest='segment_triples',
+                        action='store_false',
+                        help='Computes triples across whole dataset.')
+    # https://stackoverflow.com/a/15008806/1167475
+    parser.set_defaults(bias=True)
     parser.add_argument(
         '--batch-category',
         help='Sample metadata column for batch effects.',

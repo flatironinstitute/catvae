@@ -78,7 +78,7 @@ class TestTripleDataset(unittest.TestCase):
                               batch_category='batch',
                               class_category='treatment')
         batch = data[0]
-        self.assertEqual(len(batch), 3)
+        self.assertEqual(len(batch), 4)
 
 
 if __name__ == '__main__':

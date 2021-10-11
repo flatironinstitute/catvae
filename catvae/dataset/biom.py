@@ -26,6 +26,8 @@ class BiomDataset(Dataset):
             metadata: pd.DataFrame = None,
             batch_category: str = None):
         super(BiomDataset).__init__()
+        if np.any(table.sum(axis='sample') <= 0):
+            ValueError('Biom table has zero counts.')
         self.table = table
         self.metadata = metadata
         self.batch_category = batch_category
@@ -47,7 +49,7 @@ class BiomDataset(Dataset):
 
         self.batch_indices = None
         if self.batch_category is not None and self.metadata is not None:
-            batch_cats = np.unique(self.metadata[self.batch_category].values)
+            batch_cats = self.metadata[self.batch_category].unique()
             self.batch_cats = pd.Series(
                 np.arange(len(batch_cats)), index=batch_cats)
             self.batch_indices = np.array(
@@ -219,7 +221,8 @@ class TripletDataset(BiomDataset):
             table: biom.Table,
             metadata: pd.DataFrame,
             class_category: str,
-            batch_category: str):
+            batch_category: str,
+            segment_by_batch: bool = False):
         super(TripletDataset).__init__()
         self.table = table
         self.metadata = metadata
@@ -227,8 +230,11 @@ class TripletDataset(BiomDataset):
         self.class_category = class_category
         self.populate()
         self.metadata = self.metadata.set_index(self.index_name)
-        self.batch_dict = dict(list(
-            self.metadata.groupby(self.batch_category)))
+        if segment_by_batch:
+            self.batch_dict = dict(list(
+                self.metadata.groupby(self.batch_category)))
+        else:
+            self.batch_dict = None
 
     def __len__(self) -> int:
         return len(self.table.ids())
@@ -244,13 +250,21 @@ class TripletDataset(BiomDataset):
         k_counts : np.array
             OTU counts for negative sample
         """
+        if self.batch_indices is not None:
+            batch_indices = self.batch_indices[i]
+        else:
+            batch_indices = None
         b = self.metadata.iloc[i][self.batch_category]
-        batch_group = self.batch_dict[b]
+        if self.batch_dict:
+            batch_group = self.batch_dict[b]
+        else:
+            batch_group = pd.DataFrame({
+                self.class_category: self.metadata[self.class_category]})
         i, j, k = _get_triplet(batch_group, self.class_category)
         i_counts = self.table.data(i, axis='sample')
         j_counts = self.table.data(j, axis='sample')
         k_counts = self.table.data(k, axis='sample')
-        return i_counts, j_counts, k_counts
+        return i_counts, j_counts, k_counts, batch_indices
 
 
 class TripletTestDataset(BiomDataset):
@@ -287,7 +301,8 @@ class TripletTestDataset(BiomDataset):
         self.metadata = self.metadata.set_index(self.index_name)
         self.class_labeler = LabelEncoder().fit(
             self.metadata[class_category].values)
-        cc = self.class_labeler.transform(self.metadata[class_category].values)
+        cc = self.class_labeler.transform(
+            self.metadata[class_category].values)
         self.all_triples = _get_all_triples(cc)
 
     def __len__(self) -> int:
@@ -305,6 +320,10 @@ class TripletTestDataset(BiomDataset):
         k_counts : np.array
             OTU counts for negative sample
         """
+        if self.batch_indices is not None:
+            batch_indices = self.batch_indices[i]
+        else:
+            batch_indices = None
         i, j, k, d = self.all_triples[i]
         i = self.metadata.index[i]
         j = self.metadata.index[j]
@@ -312,7 +331,7 @@ class TripletTestDataset(BiomDataset):
         i_counts = self.table.data(i, axis='sample')
         j_counts = self.table.data(j, axis='sample')
         k_counts = self.table.data(k, axis='sample')
-        return i_counts, j_counts, k_counts, d
+        return i_counts, j_counts, k_counts, d, batch_indices
 
 
 def collate_single_f(batch):
@@ -349,10 +368,12 @@ def collate_triple_f(batch):
     i_counts_list = np.vstack([b[0] for b in batch])
     j_counts_list = np.vstack([b[1] for b in batch])
     k_counts_list = np.vstack([b[2] for b in batch])
+    batch_idx = np.array([b[3] for b in batch]).squeeze()
     i_counts = torch.from_numpy(i_counts_list).float()
     j_counts = torch.from_numpy(j_counts_list).float()
     k_counts = torch.from_numpy(k_counts_list).float()
-    return i_counts, j_counts, k_counts
+    batch_idx = torch.from_numpy(batch_idx).long()
+    return i_counts, j_counts, k_counts, batch_idx
 
 
 def collate_triple_test_f(batch):
@@ -360,10 +381,10 @@ def collate_triple_test_f(batch):
     j_counts_list = np.vstack([b[1] for b in batch])
     k_counts_list = np.vstack([b[2] for b in batch])
     d_list = np.array([b[3] for b in batch])
-    c_list = np.array([b[4] for b in batch])
+    batch_idx = np.array([b[4] for b in batch]).squeeze()
     i_counts = torch.from_numpy(i_counts_list).float()
     j_counts = torch.from_numpy(j_counts_list).float()
     k_counts = torch.from_numpy(k_counts_list).float()
     d_dist = torch.from_numpy(d_list).float()
-    c_dist = torch.from_numpy(c_list).float()
-    return i_counts, j_counts, k_counts, d_dist, c_dist
+    batch_idx = torch.from_numpy(batch_idx).long()
+    return i_counts, j_counts, k_counts, d_dist, batch_idx

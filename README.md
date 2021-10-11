@@ -54,93 +54,92 @@ All of the pretrained models were trained on 100bp 16S V4 deblurred data from [Q
 When processing your own data, it is important to note that you can only perform inference on the microbes that have been observed by the VAE.  As a result, it is critical that your data is completely aligned with the VAE. Loading the VAE model and aligning your data against the VAE can be done as follows
 
 ```python
-import torch
-import biom
-from skbio
-from gneiss.util import match_tips
-from catvae.trainer import MultVAE 
-
-# Load model files
-vae_model_path = 'catvae-mouse-z128-l5-deblur'
-ckpt_path = os.path.join(vae_model_path, 'last_ckpt.pt')
-params = os.path.join(vae_model_path, 'hparams.yaml')    
-nwk_path = os.path.join(vae_model_path, 'tree.nwk')  
-tree = skbio.TreeNode(nwk_path)
-with open(params, 'r') as stream:   
-    params = yaml.safe_load(stream)     
-params['basis'] = nwk_path
-vae_model = MultVAE.load_from_checkpoint(ckpt_path, **params)
-
-# Load your dataset
-X_train = biom.load_table('<your biom table>')
-# Align your data against the VAE
-X_train, tree = match_tips(X_train, tree)
+from catvae.util import load_model
+vae_model, tree = load_model('catvae-mouse-z128-l5-deblur')
 ```
 
 If you want to obtain a reduced dimension representation of your data, that can be done as follows
 ```python
-# Convert pandas dataframe to numpy array
-X_train = X_train.to_dataframe().to_dense().values
-# Obtain dimensionality reduced data
-X_embed = vae_model.to_latent(
-        torch.Tensor(X_train).float()).detach().cpu().numpy()
+# Load your dataset and perform dimensionality reduction
+import biom
+from catvae.util import extract_sample_embeddings
+table = biom.load_table('mouse_data/test.biom')
+sample_embeds = extract_sample_embeddings(vae_model, tree, table)
 ```
+Here, the rows are the samples and the columns are the principal component axes.
+With these representations it is possible to perform standard machine learning tasks.
+See [scikit-learn](https://scikit-learn.org/stable/index.html) for some examples.
 
-You can also sample from these embeddings. Below is an example of how you would do that.
+
+You can also sample from these embeddings, which is useful for uncertainty quantification.
+Below is an example of how you would do that.
 ```python
 x = X_train[0, :]
 vae_model.sample(x)
 ```
 
-If you want to obtain a CLR representation of the VAE decoder loadings, it can be done as follows
+If you want to extract the VAE decoder loadings to obtain co-occurrences as done in the paper, it can be done as follows
 ```python
-import pandas as pd
-from gneiss.balances import sparse_balance_basis
-Psi, int_nodes = sparse_balance_basis(tree)
-# ILR representation of the VAE decoder loadings
-W = vae_model.vae.decoder.weight.detach().numpy()
-# CLR representation of the VAE decoder loadings
-names = [n.name for n in tree.tips()]
-cW = pd.DataFrame(Psi.T @ W, index=names)
+from catvae.util import extract_observation_embeddings
+feature_embeds = extract_observation_embeddings(vae_model, tree)
 ```
+With this, one can compute [squared Euclidean](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.sqeuclidean.html#scipy.spatial.distance.sqeuclidean) or
+[cosine](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.cosine.html#scipy.spatial.distance.cosine) distances with these embeddings.  See [pdist](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.pdist.html) or [DistanceMatrix.from_iterable](http://scikit-bio.org/docs/0.5.1/generated/generated/skbio.stats.distance.DistanceMatrix.from_iterable.html) for information how to compute pairwise distances.
 
-## Loading Batch corrected VAE models
+# Documentation
+The documentation for the utility functions is given below.
 
-The process is almost identical
 ```python
-import torch
-import biom
-from skbio
-from gneiss.util import match_tips
-from catvae.trainer import MultBatchVAE 
+def load_model(model_path):
+    """ Loads VAE model.
 
-# Load model files
-vae_model_path = 'catvae-mouse-z128-l5-deblur-batch'
-ckpt_path = os.path.join(vae_model_path, 'last_ckpt.pt')
-params = os.path.join(vae_model_path, 'hparams.yaml')    
-nwk_path = os.path.join(vae_model_path, 'tree.nwk')  
-tree = skbio.TreeNode(nwk_path)
-with open(params, 'r') as stream:   
-    params = yaml.safe_load(stream)     
-params['basis'] = nwk_path
-vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path, **params)
+    Parameters
+    ----------
+    model_path : str
+       Path to the pretrained VAE model
 
-# Load your dataset
-X_train = biom.load_table('<your biom table>')
-# Align your data against the VAE
-X_train, tree = match_tips(X_train, tree)
+    Returns
+    ----------
+    vae_model : MultVAE
+        Pretrained Multinomial VAE
+    tree : skbio.TreeNode
+        The tree used to train the VAE
+    """
+
+def extract_sample_embeddings(model, tree, table, return_type='dataframe'):
+    """ Extracts sample embeddings from model
+
+    Parameters
+    ----------
+    vae_model : MultVAE
+        Pretrained Multinomial VAE
+    tree : skbio.TreeNode
+        The tree used to train the VAE
+    table : biom.Table
+        The biom table one wishes to convert to sample embeddings
+    return_type : str
+        Options include 'tensor', 'array', 'dataframe' (default='tensor').
+        If 'tensor' is specified, a `torch.Tensor` object is returned.
+        If 'array' is specified, a `numpy.array` object is returned.
+        If 'dataframe' is specified, a `pandas.DataFrame` object is returned.
+    """
+
+
+def extract_observation_embeddings(model, tree, return_type='dataframe'):
+    """ Extracts observation embeddings from model (i.e. OTUs).
+
+    The observation embeddings are all represented in CLR coordinates.
+
+    Parameters
+    ----------
+    vae_model : MultVAE
+        Pretrained Multinomial VAE
+    tree : skbio.TreeNode
+        The tree used to train the VAE
+    return_type : str
+        Options include 'tensor', 'array', 'dataframe' (default='dataframe')
+    """
 ```
-Extracting latent representations and sampling is slightly different since the batch information needs to be specified.
-All of the batch names are under the `batch_categories.txt` file, but the model only takes numerical ids as shown in the first column.
-```python
-batch_num = <your specified batch>
-X_embed = vae_model.to_latent(
-        torch.Tensor(X_train).float(), batch_num).detach().cpu().numpy()
-        
-x = X_train[0, :]
-vae_model.sample(x, batch_num)
-```
-
 ## Training the VAE models
 
 Please refer to the Jupyter notebooks under the `ipynb` folder.

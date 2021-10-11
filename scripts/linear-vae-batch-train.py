@@ -23,12 +23,15 @@ def main(args):
         sample_metadata = sample_metadata.set_index(sample_metadata.columns[0])
         sample_metadata = sample_metadata.loc[table.ids()]
         n_batches = len(sample_metadata[args.batch_category].value_counts())
+        gam, phi = args.gam_prior.split(',')
         model = MultBatchVAE(
-            n_input,
-            args.batch_prior,
-            n_batches,
+            n_input=n_input,
+            n_batches=n_batches,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
+            beta_prior=args.beta_prior,
+            gam_prior=float(gam),
+            phi_prior=float(phi),
             basis=args.basis,
             dropout=args.dropout,
             bias=args.bias,
@@ -44,8 +47,8 @@ def main(args):
             other_model = MultVAE.load_from_checkpoint(args.load_vae_weights)
             model.vae.encoder = other_model.vae.encoder
             model.vae.decoder = other_model.vae.decoder
+            model.vae.sigma_net = other_model.vae.sigma_net
             model.vae.log_sigma_sq = other_model.vae.log_sigma_sq
-            model.vae.variational_logvars = other_model.vae.variational_logvars
             # Note that input_embed isn't handled here.
 
     print(args)
@@ -89,7 +92,7 @@ def main(args):
     trainer = Trainer(
         max_epochs=args.epochs,
         gpus=args.gpus,
-        check_val_every_n_epoch=1,
+        check_val_every_n_epoch=10,
         gradient_clip_val=args.grad_clip,
         profiler=profiler,
         logger=tb_logger,
