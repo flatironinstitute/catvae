@@ -1,8 +1,7 @@
 import os
 import argparse
-import numpy as np
-from catvae.trainer import MultBatchVAE, TripletVAE
-from catvae.trainer import BiomDataModule, TripletDataModule
+from catvae.trainer import TripletVAE
+from catvae.trainer import TripletDataModule
 from catvae.trainer import add_data_specific_args
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint

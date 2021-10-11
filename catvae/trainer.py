@@ -26,13 +26,10 @@ import pytorch_lightning as pl
 from biom import load_table
 import pandas as pd
 from scipy.sparse import coo_matrix
-import numpy as np
 import os
 
 # for sklearn metrics
 from sklearn.metrics import classification_report
-# from sklearn.metrics import confusion_matrix
-# from sklearn.svm import OneClassSVM
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 
@@ -129,7 +126,7 @@ class TripletDataModule(pl.LightningDataModule):
             metadata=self.metadata,
             batch_category=self.batch_category,
             class_category=self.class_category,
-            segment_by_batch = self.segment_triples)
+            segment_by_batch=self.segment_triples)
         batch_size = min(len(train_dataset) - 1, self.batch_size)
         train_dataloader = DataLoader(
             train_dataset, batch_size=batch_size,
@@ -144,7 +141,7 @@ class TripletDataModule(pl.LightningDataModule):
             metadata=self.metadata,
             batch_category=self.batch_category,
             class_category=self.class_category,
-            segment_by_batch = self.segment_triples)
+            segment_by_batch=self.segment_triples)
         batch_size = min(len(val_dataset) - 1, self.batch_size)
         val_dataloader = DataLoader(
             val_dataset, batch_size=batch_size,
@@ -173,7 +170,7 @@ class TripletDataModule(pl.LightningDataModule):
             metadata=self.metadata,
             class_category=self.class_category,
             confounder_formula=self.confounder_formula,
-            segment_by_batch = self.segment_triples)
+            segment_by_batch=self.segment_triples)
         test2_dataloader = DataLoader(
             test2_dataset, batch_size=len(test2_dataset),
             collate_fn=collate_triple_test_f,
@@ -462,9 +459,9 @@ class MultBatchVAE(MultVAE):
             'n_input': n_input,
             'n_latent': n_latent,
             'n_hidden': n_hidden,
-            'beta_prior' : beta_prior,
-            'gam_prior' : gam_prior,
-            'phi_prior' : phi_prior,
+            'beta_prior': beta_prior,
+            'gam_prior': gam_prior,
+            'phi_prior': phi_prior,
             'basis': basis,
             'dropout': dropout,
             'bias': bias,
@@ -553,7 +550,6 @@ class MultBatchVAE(MultVAE):
         losses = self.vae(counts, batch_ids)
         loss, recon_loss, kl_div_z, kl_div_b, kl_div_S = losses
         assert torch.isnan(loss).item() is False
-        # assert torch.sum(loss) > 0, (loss, recon_loss, kl_div_z, kl_div_b, kl_div_S)
         tensorboard_logs = {
             'lr': current_lr, 'train_loss': loss
         }
@@ -754,7 +750,7 @@ class TripletVAE(pl.LightningModule):
                 'val/triplet_loss': triplet_loss,
                 'val/vae_loss': vae_loss,
                 'val/total_loss': total_loss,
-                'val_loss' : total_loss
+                'val_loss': total_loss
             }
             # log the learning rate
             return {'val_loss': total_loss, 'log': tensorboard_logs}
@@ -776,7 +772,6 @@ class TripletVAE(pl.LightningModule):
         loss = sum(losses) / len(losses)
         self.logger.experiment.add_scalar('val_loss',
                                           loss, self.global_step)
-
 
         loss_f = lambda x: x['log']['val/triplet_loss']
         losses = list(map(loss_f, outputs))

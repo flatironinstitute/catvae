@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from catvae.trainer import (MultVAE, MultBatchVAE, BiomDataModule,
                             add_data_specific_args)
-import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.profiler import AdvancedProfiler

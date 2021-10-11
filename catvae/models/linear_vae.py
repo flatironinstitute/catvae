@@ -23,7 +23,7 @@ def get_basis(input_dim, basis=None):
     return Psi
 
 
-def rnormalgamma(mu_dist : Normal, std_dist : Gamma):
+def rnormalgamma(mu_dist: Normal, std_dist: Gamma):
     mu = mu_dist.rsample()
     prec = std_dist.rsample()
     std = torch.sqrt(1 / prec)
@@ -405,7 +405,6 @@ class LinearBatchVAE(LinearDLRVAE):
         l_sample = ql.rsample()
         # compute KL divergence + reconstruction loss
         x_out = self.decoder(z_sample) + b_sample + l_sample
-        zb = torch.zeros_like(self.bpr)
         kl_div_z = kl_divergence(qz, Normal(0, 1)).mean(0).sum()
         kl_div_b = kl_divergence(qb, Normal(0, self.bpr)).mean(0).sum()
         kl_div_S = kl_divergence(qS, Gamma(self.gpr, self.ppr)).mean(0).sum()
@@ -425,7 +424,6 @@ class LinearBatchVAE(LinearDLRVAE):
         qb = Normal(batch_effects, torch.exp(0.5 * self.batch_logvars))
         z_sample = qz.sample()
         b_sample = qb.sample()
-        x_out = self.decoder(z_sample)
-        x_out += batch_effects  # Add batch effects back in
+        x_out = self.decoder(z_sample) + b_sample
         recon_loss = -self.recon_model_loglik(x, x_out)
         return recon_loss
