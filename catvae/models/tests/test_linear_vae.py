@@ -16,7 +16,7 @@ class TestLinearVAE(unittest.TestCase):
 
 
 class TestLinearBatchVAE(unittest.TestCase):
-
+    @unittest.skip('This is currently not supported.')
     def test_sample(self):
         k, C, D = 10, 3, 40
         prior = torch.randn(C, D)
