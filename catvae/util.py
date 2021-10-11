@@ -83,7 +83,7 @@ def extract_observation_embeddings(model, tree, return_type='dataframe'):
     Psi, _ = sparse_balance_basis(tree)
     # ILR representation of the VAE decoder loadings
     W = vae_model.vae.decoder.weight
-    if return_type == 'torch'
+    if return_type == 'torch':
         Psi = torch.sparse_coo_tensor(
             indices.copy(), basis.data.astype(np.float32).copy(),
             requires_grad=False).coalesce()
