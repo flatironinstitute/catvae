@@ -23,6 +23,11 @@ The development branch of catvae can be installed via
 pip install git+https://github.com/flatironinstitute/catvae.git
 ```
 
+If one wants to use the exact software dependencies used to create these models, that can be installed via
+```
+conda create -n catvae -f ci/env_2021.txt
+```
+
 ## Downloading pretrained models
 
 [Pretrained Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz)
