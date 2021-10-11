@@ -30,21 +30,26 @@ pip install git+https://github.com/flatironinstitute/catvae.git
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur.tar.gz
 tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
 ```
-[Pretrained Batch corrected Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur-batch.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur-batch.tar.gz
-tar -zxvf catvae-mouse-z128-l5-deblur-batch.tar.gz
-```
-[Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-deblur.tar.gz)
+[Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur.tar.gz
 tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
 ```
-[Pretrained Batch corrected Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-deblur-batch.tar.gz)
+
+## Downloading training data
+[Deblurred mouse dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur-batch.tar.gz
-tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
+wget https://users.flatironinstitute.org/jmorton/public_www/mouse_data.tar.gz
+tar -zxvf mouse_data.tar.gz
 ```
+[Deblurred human dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/human_data.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/human_data.tar.gz
+tar -zxvf human_data.tar.gz
+```
+
+
 ## Pre processing your data
 
 All of the pretrained models were trained on 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/).  To use these models on your data, either upload your data to Qiita, or process your data using deblur.  See the [qiime2 tutorial](https://docs.qiime2.org/2021.4/tutorials/moving-pictures/#option-2-deblur) for an example of how to deblur your amplicon data.
@@ -58,16 +63,16 @@ import torch
 import biom
 from skbio
 from gneiss.util import match_tips
-from catvae.trainer import MultVAE 
+from catvae.trainer import MultVAE
 
 # Load model files
 vae_model_path = 'catvae-mouse-z128-l5-deblur'
 ckpt_path = os.path.join(vae_model_path, 'last_ckpt.pt')
-params = os.path.join(vae_model_path, 'hparams.yaml')    
-nwk_path = os.path.join(vae_model_path, 'tree.nwk')  
+params = os.path.join(vae_model_path, 'hparams.yaml')
+nwk_path = os.path.join(vae_model_path, 'tree.nwk')
 tree = skbio.TreeNode(nwk_path)
-with open(params, 'r') as stream:   
-    params = yaml.safe_load(stream)     
+with open(params, 'r') as stream:
+    params = yaml.safe_load(stream)
 params['basis'] = nwk_path
 vae_model = MultVAE.load_from_checkpoint(ckpt_path, **params)
 
@@ -112,16 +117,16 @@ import torch
 import biom
 from skbio
 from gneiss.util import match_tips
-from catvae.trainer import MultBatchVAE 
+from catvae.trainer import MultBatchVAE
 
 # Load model files
 vae_model_path = 'catvae-mouse-z128-l5-deblur-batch'
 ckpt_path = os.path.join(vae_model_path, 'last_ckpt.pt')
-params = os.path.join(vae_model_path, 'hparams.yaml')    
-nwk_path = os.path.join(vae_model_path, 'tree.nwk')  
+params = os.path.join(vae_model_path, 'hparams.yaml')
+nwk_path = os.path.join(vae_model_path, 'tree.nwk')
 tree = skbio.TreeNode(nwk_path)
-with open(params, 'r') as stream:   
-    params = yaml.safe_load(stream)     
+with open(params, 'r') as stream:
+    params = yaml.safe_load(stream)
 params['basis'] = nwk_path
 vae_model = MultBatchVAE.load_from_checkpoint(ckpt_path, **params)
 
@@ -136,7 +141,7 @@ All of the batch names are under the `batch_categories.txt` file, but the model 
 batch_num = <your specified batch>
 X_embed = vae_model.to_latent(
         torch.Tensor(X_train).float(), batch_num).detach().cpu().numpy()
-        
+
 x = X_train[0, :]
 vae_model.sample(x, batch_num)
 ```
