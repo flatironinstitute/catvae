@@ -51,7 +51,7 @@ def extract_sample_embeddings(vae_model, tree, table, return_type='dataframe'):
         If 'array' is specified, a `numpy.array` object is returned.
         If 'dataframe' is specified, a `pandas.DataFrame` object is returned.
     """
-    X = X.to_dataframe().to_dense()
+    X = table.to_dataframe().to_dense()
     tips = [n.name for n in tree.tips()]
     X = X.reindex(index=tips).fillna(0)
     X_embed = vae_model.to_latent(
