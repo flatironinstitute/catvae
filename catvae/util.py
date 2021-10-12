@@ -26,7 +26,7 @@ def load_model(model_path):
     ckpt_path = os.path.join(model_path, 'last_ckpt.pt')
     params = os.path.join(model_path, 'hparams.yaml')
     nwk_path = os.path.join(model_path, 'tree.nwk')
-    tree = skbio.TreeNode(nwk_path)
+    tree = skbio.TreeNode.read(nwk_path)
     with open(params, 'r') as stream:
         params = yaml.safe_load(stream)
     params['basis'] = nwk_path
@@ -51,7 +51,7 @@ def extract_sample_embeddings(vae_model, tree, table, return_type='dataframe'):
         If 'array' is specified, a `numpy.array` object is returned.
         If 'dataframe' is specified, a `pandas.DataFrame` object is returned.
     """
-    X = table.to_dataframe().to_dense()
+    X = table.to_dataframe()
     tips = [n.name for n in tree.tips()]
     X = X.reindex(index=tips).fillna(0)
     X_embed = vae_model.to_latent(
