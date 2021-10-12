@@ -1,8 +1,9 @@
+import os
+import yaml
 import torch
-import biom
-from skbio
+import skbio
+import numpy as np
 import pandas as pd
-from gneiss.util import match_tips
 from catvae.trainer import MultVAE
 from gneiss.balances import sparse_balance_basis
 
@@ -33,7 +34,7 @@ def load_model(model_path):
     return vae_model, tree
 
 
-def extract_sample_embeddings(model, tree, table, return_type='dataframe'):
+def extract_sample_embeddings(vae_model, tree, table, return_type='dataframe'):
     """ Extracts sample embeddings from model
 
     Parameters
@@ -66,7 +67,7 @@ def extract_sample_embeddings(model, tree, table, return_type='dataframe'):
         ValueError(f'return type {return_type} is not supported.')
 
 
-def extract_observation_embeddings(model, tree, return_type='dataframe'):
+def extract_observation_embeddings(vae_model, tree, return_type='dataframe'):
     """ Extracts observation embeddings from model (i.e. OTUs).
 
     The observation embeddings are all represented in CLR coordinates.
@@ -80,18 +81,19 @@ def extract_observation_embeddings(model, tree, return_type='dataframe'):
     return_type : str
         Options include 'tensor', 'array', 'dataframe' (default='dataframe')
     """
-    Psi, _ = sparse_balance_basis(tree)
     # ILR representation of the VAE decoder loadings
     W = vae_model.vae.decoder.weight
+    Psi, _ = sparse_balance_basis(tree)
     if return_type == 'torch':
+        indices = np.vstack((Psi.row, Psi.col))
         Psi = torch.sparse_coo_tensor(
-            indices.copy(), basis.data.astype(np.float32).copy(),
+            indices.copy(), Psi.data.astype(np.float32).copy(),
             requires_grad=False).coalesce()
         return Psi.T @ W
     if return_type == 'array':
         return Psi.T @ W.detach().numpy()
     if return_type == 'dataframe':
         names = [n.name for n in tree.tips()]
-        return = pd.DataFrame(Psi.T @ W.detach().numpy(), index=names)
+        return pd.DataFrame(Psi.T @ W.detach().numpy(), index=names)
     else:
         ValueError(f'return type {return_type} is not supported.')
