@@ -32,26 +32,28 @@ conda create -n catvae -f ci/env_2021.txt
 
 [Pretrained Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur.tar.gz
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz
 tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
 ```
 ```
 [Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur.tar.gz
-tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz
+tar -zxvf catvae-human-z128-l5-overdispersion-deblur.tar.gz
 ```
 
 ## Downloading training data
 [Deblurred mouse dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/mouse_data.tar.gz
-tar -zxvf mouse_data.tar.gz
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz
+mkdir mouse_data
+tar -zxvf mouse_data.tar.gz -C mouse_data
 ```
 [Deblurred human dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/human_data.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/human_data.tar.gz
-tar -zxvf human_data.tar.gz
+mkdir human_data
+tar -zxvf human_data.tar.gz -C human_data
 ```
 
 
