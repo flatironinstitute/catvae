@@ -23,28 +23,40 @@ The development branch of catvae can be installed via
 pip install git+https://github.com/flatironinstitute/catvae.git
 ```
 
+If one wants to use the exact software dependencies used to create these models, that can be installed via
+```
+conda create -n catvae -f ci/env_2021.txt
+```
+
 ## Downloading pretrained models
 
 [Pretrained Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur.tar.gz
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz
 tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
 ```
-[Pretrained Batch corrected Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur-batch.tar.gz)
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-mouse-z128-l5-deblur-batch.tar.gz
-tar -zxvf catvae-mouse-z128-l5-deblur-batch.tar.gz
+[Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz)
 ```
-[Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-deblur.tar.gz)
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz
+tar -zxvf catvae-human-z128-l5-overdispersion-deblur.tar.gz
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur.tar.gz
-tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
+
+## Downloading training data
+[Deblurred mouse dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz)
 ```
-[Pretrained Batch corrected Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-deblur-batch.tar.gz)
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz
+mkdir mouse_data
+tar -zxvf mouse_data.tar.gz -C mouse_data
 ```
-wget https://users.flatironinstitute.org/jmorton/public_www/catvae-human-z128-l5-deblur-batch.tar.gz
-tar -zxvf catvae-human-z128-l5-deblur-batch.tar.gz
+[Deblurred human dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/human_data.tar.gz)
 ```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/human_data.tar.gz
+mkdir human_data
+tar -zxvf human_data.tar.gz -C human_data
+```
+
+
 ## Pre processing your data
 
 All of the pretrained models were trained on 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/).  To use these models on your data, either upload your data to Qiita, or process your data using deblur.  See the [qiime2 tutorial](https://docs.qiime2.org/2021.4/tutorials/moving-pictures/#option-2-deblur) for an example of how to deblur your amplicon data.
@@ -64,7 +76,7 @@ If you want to obtain a reduced dimension representation of your data, that can 
 import biom
 from catvae.util import extract_sample_embeddings
 table = biom.load_table('mouse_data/test.biom')
-sample_embeds = extract_sample_embeddings(vae_model, tree, table)
+sample_embeds = extract_sample_embeddings(vae_model, tree, table, return_type='tensor')
 ```
 Here, the rows are the samples and the columns are the principal component axes.
 With these representations it is possible to perform standard machine learning tasks.
@@ -72,10 +84,11 @@ See [scikit-learn](https://scikit-learn.org/stable/index.html) for some examples
 
 
 You can also sample from these embeddings, which is useful for uncertainty quantification.
-Below is an example of how you would do that.
+Below is an example of how you would do that from a given biom input.
 ```python
-x = X_train[0, :]
-vae_model.sample(x)
+import torch
+x = torch.Tensor(table.data(id='10422.12.F.8'))
+vae_model.vae.sample(x)
 ```
 
 If you want to extract the VAE decoder loadings to obtain co-occurrences as done in the paper, it can be done as follows
