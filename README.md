@@ -59,7 +59,7 @@ tar -zxvf human_data.tar.gz -C human_data
 
 ## Pre processing your data
 
-All of the pretrained models were trained on 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/).  To use these models on your data, either upload your data to Qiita, or process your data using deblur.  See the [qiime2 tutorial](https://docs.qiime2.org/2021.4/tutorials/moving-pictures/#option-2-deblur) for an example of how to deblur your amplicon data.
+All of the pretrained models were trained on 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/).  To use these models on your data, either upload your data to Qiita, or process your data using deblur.  See the [qiime2 tutorial](https://docs.qiime2.org/2021.4/tutorials/moving-pictures/#option-2-deblur) for an example of how to deblur your amplicon data.  It is assumed that the deblur sequences themselves are the observation ids, so the qiime2 approach may require relabeling the biom table observation ids (see [biom.Table.update_ids](http://biom-format.org/documentation/generated/biom.table.Table.update_ids.html))
 
 ## Loading VAE models
 
