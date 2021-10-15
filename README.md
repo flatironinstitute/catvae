@@ -35,7 +35,7 @@ conda create -n catvae -f ci/env_2021.txt
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz
 tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
 ```
-```
+
 [Pretrained Human VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z128-l5-overdispersion-deblur.tar.gz
