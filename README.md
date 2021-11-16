@@ -156,3 +156,14 @@ def extract_observation_embeddings(model, tree, return_type='dataframe'):
 ## Training the VAE models
 
 Please refer to the Jupyter notebooks under the `ipynb` folder.
+
+## Citing our paper
+
+If you like this work, please cite it at
+```
+@article{morton2021scalable,
+  title={Scalable estimation of microbial co-occurrence networks with Variational Autoencoders},
+  author={Morton, J and Silverman, J and Tikhonov, G and Lahdesmaki, H and Bonneau, R},
+  year={2021}
+}
+```
