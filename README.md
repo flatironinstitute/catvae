@@ -64,7 +64,7 @@ mkdir human_data
 tar -zxvf human_data.tar.gz -C human_data
 ```
 
-## Downloading pretrained deblur models
+## Downloading pretrained WOL models
 
 [Pretrained Mouse VAE 64 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z64-l5-wol.tar.gz)
 ```
