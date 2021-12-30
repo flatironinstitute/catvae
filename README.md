@@ -28,7 +28,14 @@ If one wants to use the exact software dependencies used to create these models,
 conda create -n catvae -f ci/env_2021.txt
 ```
 
-## Downloading pretrained models
+# Pretrained models
+
+We offer two types of models, namely those trained on Deblurred sequences, and those mapped to reference genomes from [Web of Life] (https://biocore.github.io/wol/) (WOL).
+The reference genome may offer more flexibility, since it can be interoperable between different primers and metagenomics measurements.
+We used the [biom-utils](https://github.com/mortonjt/biom-util) package to map deblurred sequences to the Web of Life, but this strategy 
+can also be used for sequences denoised with DADA2 or UNOISE.
+
+## Downloading pretrained deblur models
 
 [Pretrained Mouse VAE 128 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z128-l5-deblur.tar.gz)
 ```
@@ -42,13 +49,14 @@ wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae
 tar -zxvf catvae-human-z128-l5-overdispersion-deblur.tar.gz
 ```
 
-## Downloading training data
+## Downloading deblurred training data
 [Deblurred mouse dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/mouse_data.tar.gz
 mkdir mouse_data
 tar -zxvf mouse_data.tar.gz -C mouse_data
 ```
+
 [Deblurred human dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/human_data.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/human_data.tar.gz
@@ -56,10 +64,46 @@ mkdir human_data
 tar -zxvf human_data.tar.gz -C human_data
 ```
 
+## Downloading pretrained deblur models
+
+[Pretrained Mouse VAE 64 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z64-l5-wol.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z64-l5-wol.tar.gz
+tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
+```
+
+[Pretrained Human VAE 64 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/wol/catvae-human-z64-l5-wol.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-human-z64-l5-overdispersion-deblur.tar.gz
+tar -zxvf catvae-human-z128-l5-overdispersion-deblur.tar.gz
+```
+
+## Downloading WOL training data
+
+[WOL mouse dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/wol/mouse_data.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/wol/mouse_data.tar.gz
+mkdir mouse_data
+tar -zxvf mouse_data.tar.gz -C mouse_data
+```
+
+[WOL human dataset](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/wol/human_data.tar.gz)
+```
+wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/wol/human_data.tar.gz
+mkdir human_data
+tar -zxvf human_data.tar.gz -C human_data
+```
+
 
 ## Pre processing your data
 
-All of the pretrained models were trained on 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/).  To use these models on your data, either upload your data to Qiita, or process your data using deblur.  See the [qiime2 tutorial](https://docs.qiime2.org/2021.4/tutorials/moving-pictures/#option-2-deblur) for an example of how to deblur your amplicon data.  It is assumed that the deblur sequences themselves are the observation ids, so the qiime2 approach may require relabeling the biom table observation ids (see [biom.Table.update_ids](http://biom-format.org/documentation/generated/biom.table.Table.update_ids.html))
+### Preprocessing for deblurred models
+
+All of the pretrained deblur models were trained on 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/).  To use these models on your data, either upload your data to Qiita, or process your data using deblur.  See the [qiime2 tutorial](https://docs.qiime2.org/2021.4/tutorials/moving-pictures/#option-2-deblur) for an example of how to deblur your amplicon data.  It is assumed that the deblur sequences themselves are the observation ids, so the qiime2 approach may require relabeling the biom table observation ids (see [biom.Table.update_ids](http://biom-format.org/documentation/generated/biom.table.Table.update_ids.html))
+
+### Preprocessing for WOL models
+All of the pretrained WOL models were trained from sequences that mapped 100bp 16S V4 deblurred data from [Qiita](https://qiita.ucsd.edu/) to the [WOL](https://biocore.github.io/wol/) database. To use these models, you must map your denoised data to these databases, which can be done using the utility scripts provided [here](https://github.com/mortonjt/biom-util).
+
 
 ## Loading VAE models
 
