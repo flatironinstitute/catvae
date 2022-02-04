@@ -66,7 +66,7 @@ tar -zxvf human_data.tar.gz -C human_data
 
 ## Downloading pretrained WOL models
 
-[Pretrained Mouse VAE 64 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z64-l5-wol.tar.gz)
+[Pretrained Mouse VAE 64 latent dimensions](https://users.flatironinstitute.org/jmorton/public_www/catvae_models/wol/catvae-mouse-z64-l5-wol.tar.gz)
 ```
 wget https://users.flatironinstitute.org/jmorton/public_www/catvae_models/catvae-mouse-z64-l5-wol.tar.gz
 tar -zxvf catvae-mouse-z128-l5-deblur.tar.gz
